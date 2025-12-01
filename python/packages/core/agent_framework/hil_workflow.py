@@ -8,6 +8,9 @@ This module wires the documented design into a runnable starter that:
 """
 from __future__ import annotations
 
+import json
+import math
+import os
 import re
 import sqlite3
 from dataclasses import dataclass, field
@@ -27,7 +30,8 @@ except ImportError:  # pragma: no cover - handled at runtime for environments wi
 from pydantic import Field
 
 from agent_framework import ChatAgent, SequentialBuilder, ai_function
-from agent_framework.openai import OpenAIChatClient
+from agent_framework.azure import AzureOpenAIChatClient
+from openai import AzureOpenAI
 
 WRITE_PATTERN = re.compile(r"\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|TRUNCATE|VACUUM|GRANT|REVOKE)\b", re.IGNORECASE)
 
@@ -206,14 +210,99 @@ class LocalRetriever:
         return retrieve_docs
 
 
+class AzureEmbeddingRetriever:
+    """Azure OpenAI-backed retriever that embeds docs and queries for semantic RAG."""
+
+    def __init__(
+        self,
+        documents: Optional[List[str]] = None,
+        top_k: int = 4,
+        *,
+        embed_deployment: Optional[str] = None,
+        endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
+        api_version: Optional[str] = None,
+    ):
+        self.documents = documents or []
+        self.top_k = top_k
+        self.embed_deployment = embed_deployment or os.getenv("AZURE_EMBED_DEPLOYMENT")
+        self.endpoint = endpoint or os.getenv("AZURE_OPENAI_ENDPOINT")
+        self.api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY")
+        self.api_version = api_version or os.getenv("AZURE_OPENAI_API_VERSION") or "2025-01-01-preview"
+
+        if not self.embed_deployment:
+            raise ValueError("AZURE_EMBED_DEPLOYMENT is required for AzureEmbeddingRetriever")
+        if not self.endpoint:
+            raise ValueError("AZURE_OPENAI_ENDPOINT is required for AzureEmbeddingRetriever")
+        if not self.api_key:
+            raise ValueError("AZURE_OPENAI_API_KEY is required for AzureEmbeddingRetriever")
+
+        self._client = AzureOpenAI(
+            api_key=self.api_key,
+            azure_endpoint=self.endpoint,
+            api_version=self.api_version,
+        )
+        self._index = [(doc, self._embed(doc)) for doc in self.documents]
+
+    def _embed(self, text: str) -> List[float]:
+        response = self._client.embeddings.create(model=self.embed_deployment, input=[text])
+        return response.data[0].embedding
+
+    @staticmethod
+    def _cosine_similarity(a: List[float], b: List[float]) -> float:
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(y * y for y in b))
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    def tool(self) -> Callable:
+        @ai_function(name="retrieve_docs", description="Retrieve Azure-embedded snippets with citations")
+        def retrieve_docs(question: Annotated[str, Field(description="User question text")]) -> str:
+            query_embedding = self._embed(question)
+            ranked = sorted(
+                self._index,
+                key=lambda item: self._cosine_similarity(query_embedding, item[1]),
+                reverse=True,
+            )[: self.top_k]
+            payload = [
+                {"doc_id": idx, "snippet": doc, "score": round(self._cosine_similarity(query_embedding, emb), 3)}
+                for idx, (doc, emb) in enumerate(ranked)
+            ]
+            return json.dumps(payload)
+
+        return retrieve_docs
+
+
 @dataclass
 class HilOrchestrator:
     """Builds Planner → SQL → RAG → Reasoning → Response agents for HIL workflows."""
 
     config: WorkflowConfig
     sql_connector: SQLConnector
-    retriever: Optional[LocalRetriever] = None
+    retriever: Optional[LocalRetriever | AzureEmbeddingRetriever] = None
     extra_agents: Sequence[ChatAgent] = field(default_factory=list)
+    chat_client_factory: Optional[Callable[[], AzureOpenAIChatClient]] = None
+    _chat_client: Optional[AzureOpenAIChatClient] = field(default=None, init=False, repr=False)
+
+    def _ensure_chat_client(self) -> AzureOpenAIChatClient:
+        if self.chat_client_factory:
+            return self.chat_client_factory()
+        if self._chat_client is None:
+            endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+            api_key = os.getenv("AZURE_OPENAI_API_KEY")
+            if not endpoint or not api_key:
+                raise ValueError("AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY must be set for Azure chat usage")
+            self._chat_client = AzureOpenAIChatClient(
+                deployment_name=os.getenv("AZURE_OPENAI_DEPLOYMENT")
+                or os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME")
+                or "gpt-4o",
+                endpoint=endpoint,
+                api_key=api_key,
+                api_version=os.getenv("AZURE_OPENAI_API_VERSION") or "2025-01-01-preview",
+            )
+        return self._chat_client
 
     def _planner_agent(self) -> ChatAgent:
         instructions = (
@@ -225,7 +314,7 @@ class HilOrchestrator:
             tools.append(self.retriever.tool())
         return ChatAgent(
             name="Planner",
-            chat_client=OpenAIChatClient(),
+            chat_client=self._ensure_chat_client(),
             instructions=instructions,
             tools=tools,
         )
@@ -237,7 +326,7 @@ class HilOrchestrator:
         )
         return ChatAgent(
             name="SQLAgent",
-            chat_client=OpenAIChatClient(),
+            chat_client=self._ensure_chat_client(),
             instructions=instructions,
             tools=list(self.sql_connector.tools()),
         )
@@ -247,7 +336,7 @@ class HilOrchestrator:
             return None
         return ChatAgent(
             name="RAGAgent",
-            chat_client=OpenAIChatClient(),
+            chat_client=self._ensure_chat_client(),
             instructions="Answer with cited snippets from retrieved docs.",
             tools=[self.retriever.tool()],
         )
@@ -262,7 +351,7 @@ class HilOrchestrator:
             tools.append(self.config.calculator_tool)
         return ChatAgent(
             name="Reasoner",
-            chat_client=OpenAIChatClient(),
+            chat_client=self._ensure_chat_client(),
             instructions=base_instructions,
             tools=tools,
         )
@@ -274,7 +363,7 @@ class HilOrchestrator:
         )
         return ChatAgent(
             name="Responder",
-            chat_client=OpenAIChatClient(),
+            chat_client=self._ensure_chat_client(),
             instructions=instructions,
         )
 

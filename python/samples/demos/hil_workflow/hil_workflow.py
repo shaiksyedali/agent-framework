@@ -9,13 +9,8 @@ import asyncio
 from typing import Annotated
 
 from agent_framework import ai_function
-from agent_framework.hil_workflow import (
-    Engine,
-    HilOrchestrator,
-    LocalRetriever,
-    SQLiteConnector,
-    WorkflowConfig,
-)
+from agent_framework.hil_workflow import Engine, HilOrchestrator, LocalRetriever, SQLiteConnector, WorkflowConfig
+from agent_framework.hil_workflow import AzureEmbeddingRetriever
 
 
 # Optional calculator to demonstrate tool chaining during reasoning
@@ -44,13 +39,15 @@ def build_sample_workflow():
         "INSERT INTO trips VALUES (1, 'Seattle', 12.1, 0.5), (2, 'Portland', 9.4, 0.45);"
     )
 
-    retriever = LocalRetriever(
-        documents=[
-            "Seattle fleet: prioritize charging near the port terminals.",
-            "Portland trips frequently include hills—expect higher energy draw.",
-        ],
-        top_k=config.retriever_top_k,
-    )
+    docs = [
+        "Seattle fleet: prioritize charging near the port terminals.",
+        "Portland trips frequently include hills—expect higher energy draw.",
+    ]
+    try:
+        retriever = AzureEmbeddingRetriever(documents=docs, top_k=config.retriever_top_k)
+    except Exception:
+        # Fallback to simple keyword retriever when Azure env vars are not set locally
+        retriever = LocalRetriever(documents=docs, top_k=config.retriever_top_k)
 
     orchestrator = HilOrchestrator(
         config=config,

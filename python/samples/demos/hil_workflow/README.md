@@ -5,7 +5,13 @@ This demo wires together the planner, SQL, RAG, reasoning, and response agents d
 ## Prerequisites
 - Python 3.10+
 - `pip install -e python/packages/core` (from the repo root)
-- OpenAI-compatible chat model credentials (e.g., `OPENAI_API_KEY`) if you want to run the `hil_workflow.py` streaming sample
+- Azure OpenAI credentials (preferred) using the same variables the framework reads:
+  - `AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/`
+  - `AZURE_OPENAI_API_KEY=<key>`
+  - `AZURE_OPENAI_DEPLOYMENT=<chat deployment>` (or `AZURE_OPENAI_CHAT_DEPLOYMENT_NAME`)
+  - `AZURE_OPENAI_API_VERSION=2025-01-01-preview`
+  - `AZURE_EMBED_DEPLOYMENT=text-embedding-3-small` for the RAG retriever
+- OpenAI-compatible chat model credentials (e.g., `OPENAI_API_KEY`) if you want to fall back to the non-Azure path
 - Optional: `duckdb` and/or `psycopg[binary]` if you want to switch engines
 
 ## Run the streaming console demo
@@ -15,6 +21,8 @@ python hil_workflow.py
 ```
 
 Expected behavior: the workflow streams events for plan, SQL, RAG retrieval, reasoning, and the final formatted response. SQL and other tools run under the configured `approval_mode`, so you can integrate the events with a UI that pauses for human confirmation.
+
+Azure OpenAI is the default LLM and embedding provider for this sample. If the Azure env vars are set, the Planner/SQL/RAG/Reasoner agents will use `AzureOpenAIChatClient`, and the RAG retriever will embed docs with `AZURE_EMBED_DEPLOYMENT`. When the variables are absent, the demo falls back to a lightweight in-process keyword retriever so the streaming sample still runs offline.
 
 ## Run the lightweight API server (for the Next.js UI)
 The UI demo can talk to a real backend using a small FastAPI service that mirrors the event envelope expected by `ui/hil-workflow`.

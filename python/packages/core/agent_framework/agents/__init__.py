@@ -1,5 +1,12 @@
 """Agent helpers and building blocks."""
 
+from .domain_registry import (
+    DomainAgentMatch,
+    DomainAgentRegistry,
+    DomainAgentRegistration,
+    DomainAgentSelection,
+    DomainToolRegistration,
+)
 from .planner import (
     DataSourceSelection,
     IntentClassification,
@@ -12,6 +19,11 @@ from .research import ReasoningAgent, ResponseGenerator, RetrievalAgent, Retriev
 from .sql import SQLAgent, SQLAttempt, SQLExample, SQLExecutionResult, SQLPromptBuilder
 
 __all__ = [
+    "DomainAgentMatch",
+    "DomainAgentRegistry",
+    "DomainAgentRegistration",
+    "DomainAgentSelection",
+    "DomainToolRegistration",
     "DataSourceSelection",
     "IntentClassification",
     "IntentType",

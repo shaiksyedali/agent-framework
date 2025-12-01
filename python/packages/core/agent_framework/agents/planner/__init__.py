@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import re
 from dataclasses import dataclass, field
 from enum import Enum
@@ -12,6 +13,10 @@ from agent_framework.data.vector_store import DocumentIngestionService
 from agent_framework.orchestrator.approvals import ApprovalType
 from agent_framework.orchestrator.context import OrchestrationContext
 from agent_framework.orchestrator.graph import StepDefinition, StepGraph
+from agent_framework.agents.domain_registry import (
+    DomainAgentRegistry,
+    DomainAgentSelection,
+)
 from agent_framework.agents.sql import SQLAgent, SQLExample
 
 
@@ -20,6 +25,7 @@ class IntentType(str, Enum):
 
     SQL = "sql"
     RAG = "rag"
+    DOMAIN = "domain"
     CUSTOM = "custom"
 
 
@@ -30,6 +36,8 @@ class IntentClassification:
     intent: IntentType
     confidence: float
     rationale: str
+    domain_agent_key: str | None = None
+    recommended_tools: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -39,6 +47,9 @@ class DataSourceSelection:
     target: IntentType
     connector_key: str | None
     reason: str
+    domain_agent_key: str | None = None
+    tool_name: str | None = None
+    missing_dependencies: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -75,6 +86,7 @@ class Planner:
         sql_validator: Callable[[list[dict[str, Any]]], bool] | None = None,
         include_raw_rows: bool = True,
         enable_calculator_fallback: bool = True,
+        domain_registry: DomainAgentRegistry | None = None,
     ) -> None:
         self._default_confidence = default_confidence
         self._sql_llm = sql_llm
@@ -83,6 +95,7 @@ class Planner:
         self._sql_validator = sql_validator
         self._include_raw_rows = include_raw_rows
         self._enable_calculator_fallback = enable_calculator_fallback
+        self._domain_registry = domain_registry
 
     def classify_intent(
         self,
@@ -98,6 +111,20 @@ class Planner:
         has_vector_search = any(
             isinstance(conn, DocumentIngestionService) for conn in context.connectors.values()
         )
+        domain_match = self._match_domain_agent(user_goal, context)
+
+        if domain_match:
+            missing = sorted(domain_match.missing_dependencies)
+            rationale = domain_match.match.reason
+            if missing:
+                rationale = f"{rationale} (missing: {', '.join(missing)})"
+            return IntentClassification(
+                intent=IntentType.DOMAIN,
+                confidence=max(self._default_confidence, domain_match.match.confidence),
+                rationale=rationale,
+                domain_agent_key=domain_match.agent.key,
+                recommended_tools=[domain_match.tool.name] if domain_match.tool else [],
+            )
 
         if has_sql_connector and self._looks_like_sql(normalized):
             return IntentClassification(
@@ -146,8 +173,22 @@ class Planner:
         context: OrchestrationContext,
         *,
         custom_tools: Mapping[str, Callable[..., Any]] | None = None,
+        user_goal: str | None = None,
     ) -> DataSourceSelection:
         """Pick a concrete connector or tool based on the classification."""
+
+        if classification.intent == IntentType.DOMAIN and self._domain_registry and user_goal:
+            match = self._match_domain_agent(user_goal, context)
+            if match:
+                tool_name = match.tool.name if match.tool else None
+                return DataSourceSelection(
+                    target=IntentType.DOMAIN,
+                    connector_key=tool_name,
+                    reason=match.match.reason,
+                    domain_agent_key=match.agent.key,
+                    tool_name=tool_name,
+                    missing_dependencies=sorted(match.missing_dependencies),
+                )
 
         if classification.intent == IntentType.SQL:
             sql_key = self._first_matching_key(context.connectors, SQLConnector)
@@ -192,7 +233,9 @@ class Planner:
             context,
             has_custom_tools=bool(custom_tools),
         )
-        selection = self.select_data_source(classification, context, custom_tools=custom_tools)
+        selection = self.select_data_source(
+            classification, context, custom_tools=custom_tools, user_goal=user_goal
+        )
 
         plan_steps = [
             PlanStep(
@@ -235,6 +278,10 @@ class Planner:
             rag_step = self._build_rag_step(user_goal, selection, context)
             plan_steps.append(rag_step.plan_step)
             graph.add_step(rag_step.step_definition, dependencies=["plan"])
+        elif selection.target == IntentType.DOMAIN:
+            domain_step = self._build_domain_step(user_goal, selection, context)
+            plan_steps.append(domain_step.plan_step)
+            graph.add_step(domain_step.step_definition, dependencies=["plan"])
         else:
             custom_step = self._build_custom_tool_step(user_goal, selection, custom_tools)
             plan_steps.append(custom_step.plan_step)
@@ -347,6 +394,86 @@ class Planner:
         )
         return _StepBundle(plan_step=plan_step, step_definition=step_def)
 
+    def _build_domain_step(
+        self,
+        user_goal: str,
+        selection: DataSourceSelection,
+        context: OrchestrationContext,
+    ) -> "_StepBundle":
+        if not self._domain_registry:
+            raise ValueError("Domain registry must be provided for domain planning")
+        if not selection.domain_agent_key:
+            raise ValueError("Domain agent selection is missing an agent key")
+
+        agent = self._domain_registry.get_agent(selection.domain_agent_key)
+        if agent is None:
+            raise ValueError(f"No domain agent registered with key '{selection.domain_agent_key}'")
+
+        matches = self._domain_registry.match_agents(user_goal, context)
+        match: DomainAgentSelection | None = next(
+            (candidate for candidate in matches if candidate.agent.key == agent.key), None
+        )
+        if match is None:
+            raise ValueError(f"Domain agent '{agent.key}' could not handle the request")
+
+        missing = set(selection.missing_dependencies)
+        if missing:
+            def report_requirements(_: OrchestrationContext) -> dict[str, Any]:
+                return {
+                    "status": "blocked",
+                    "agent": agent.key,
+                    "missing_dependencies": sorted(missing),
+                }
+
+            step_def = StepDefinition(
+                step_id=f"review_{agent.key}_inputs",
+                name=f"Review {agent.name} prerequisites",
+                action=report_requirements,
+                approval_type=None,
+                summary=f"{agent.name} requires data sources: {', '.join(sorted(missing))}",
+                metadata={"agent": agent.key, "missing_dependencies": sorted(missing)},
+            )
+            plan_step = PlanStep(
+                step_id=step_def.step_id,
+                name=step_def.name,
+                description=f"Confirm required connectors {', '.join(sorted(missing))} are available for {agent.name}",
+                dependencies=["plan"],
+            )
+            return _StepBundle(plan_step=plan_step, step_definition=step_def)
+
+        tool = match.tool
+        if tool is None:
+            raise ValueError(f"Domain agent '{agent.key}' does not have any tools registered")
+
+        async def invoke_tool(_: OrchestrationContext):
+            result = tool.handler(user_goal, context)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+
+        summary = tool.summarize(self._truncate_goal(user_goal))
+        step_id = f"run_{agent.key}"
+        step_def = StepDefinition(
+            step_id=step_id,
+            name=agent.name,
+            action=invoke_tool,
+            approval_type=tool.approval_type,
+            summary=summary,
+            metadata={
+                "agent": agent.key,
+                "tool": tool.name,
+                "policy_tags": set(tool.policy_tags),
+            },
+        )
+        plan_step = PlanStep(
+            step_id=step_id,
+            name=agent.name,
+            description=f"Use domain agent '{agent.name}' via tool '{tool.name}'",
+            approval_type=tool.approval_type,
+            dependencies=["plan"],
+        )
+        return _StepBundle(plan_step=plan_step, step_definition=step_def)
+
     def _collect_sql_history(self, context: OrchestrationContext) -> list[SQLExample]:
         combined: list[SQLExample] = list(self._sql_history)
         context_history = context.workflow_metadata.get("sql_history", [])
@@ -397,6 +524,14 @@ class Planner:
         if not isinstance(connector, expected_type):
             raise ValueError(f"Expected a {expected_type.__name__} in the orchestration context")
         return connector
+
+    def _match_domain_agent(
+        self, user_goal: str, context: OrchestrationContext
+    ) -> DomainAgentSelection | None:
+        if not self._domain_registry:
+            return None
+        matches = self._domain_registry.match_agents(user_goal, context)
+        return matches[0] if matches else None
 
     @staticmethod
     def _first_matching_value(mapping: Mapping[str, Any], expected_type: type) -> Any:

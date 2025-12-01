@@ -11,6 +11,7 @@ from .events import (
     OrchestrationStepCompletedEvent,
     OrchestrationStepFailedEvent,
     OrchestrationStepStartedEvent,
+    SQLExecutionEvent,
 )
 from .graph import StepDefinition, StepGraph
 from .runner import Orchestrator, OrchestrationError
@@ -30,6 +31,7 @@ __all__ = [
     "OrchestrationStepCompletedEvent",
     "OrchestrationStepFailedEvent",
     "OrchestrationStepStartedEvent",
+    "SQLExecutionEvent",
     "Orchestrator",
     "StepDefinition",
     "StepGraph",

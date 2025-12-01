@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sqlite3
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
@@ -20,11 +21,29 @@ class SQLApprovalPolicy:
     approval_required: bool = True
     preview_limit: int = 120
     summary_prefix: str = "Execute SQL query"
+    engine: str = "generic"
+    risky_statements: tuple[str, ...] = (
+        "insert",
+        "update",
+        "delete",
+        "drop",
+        "alter",
+        "create",
+        "truncate",
+        "replace",
+    )
 
     def should_request_approval(self, query: str) -> bool:
         """Return whether approval should be requested for the given query."""
 
-        return self.approval_required and bool(query.strip())
+        normalized = query.strip()
+        return bool(normalized) and (self.approval_required or self.is_risky(normalized))
+
+    def is_risky(self, query: str) -> bool:
+        """Detect potentially destructive statements such as DDL/DML."""
+
+        lowered = query.lower()
+        return any(re.search(rf"\b{keyword}\b", lowered) for keyword in self.risky_statements)
 
     def summarize(self, query: str) -> str:
         """Provide a concise summary to show when requesting approval."""
@@ -32,7 +51,7 @@ class SQLApprovalPolicy:
         normalized = " ".join(query.strip().split())
         if len(normalized) > self.preview_limit:
             normalized = f"{normalized[: self.preview_limit - 3]}..."
-        return f"{self.summary_prefix}: {normalized}" if normalized else self.summary_prefix
+        return f"{self.summary_prefix} ({self.engine}): {normalized}" if normalized else self.summary_prefix
 
 
 class SQLConnector:
@@ -61,6 +80,7 @@ class SQLiteConnector(SQLConnector):
 
     def __init__(self, database: str = ":memory:", *, approval_policy: SQLApprovalPolicy | None = None) -> None:
         super().__init__(approval_policy=approval_policy)
+        self.approval_policy.engine = self.approval_policy.engine or "sqlite"
         self._database = database
 
     def _connect(self) -> sqlite3.Connection:
@@ -99,6 +119,7 @@ class DuckDBConnector(SQLConnector):
 
     def __init__(self, database: str = ":memory:", *, read_only: bool = False, approval_policy: SQLApprovalPolicy | None = None) -> None:
         super().__init__(approval_policy=approval_policy)
+        self.approval_policy.engine = self.approval_policy.engine or "duckdb"
         self._database = database
         self._read_only = read_only
 
@@ -149,6 +170,7 @@ class PostgresConnector(SQLConnector):
         approval_policy: SQLApprovalPolicy | None = None,
     ) -> None:
         super().__init__(approval_policy=approval_policy)
+        self.approval_policy.engine = self.approval_policy.engine or "postgres"
         self._connection_factory = connection_factory
         self._connection_string = connection_string
 

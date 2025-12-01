@@ -7,6 +7,7 @@ from agent_framework.data import (
     DocumentIngestionService,
     DuckDBConnector,
     PostgresConnector,
+    SQLApprovalPolicy,
     SQLiteConnector,
 )
 from agent_framework.orchestrator.context import OrchestrationContext
@@ -73,3 +74,11 @@ def test_orchestration_context_surfaces_connectors(sqlite_db):
     assert "orders_db" not in context.connectors
     assert updated.get_connector("orders_db") is updated.connectors["orders_db"]
     assert updated.workflow_metadata == context.workflow_metadata
+
+
+def test_sql_approval_policy_detects_risky_queries():
+    policy = SQLApprovalPolicy(approval_required=False, engine="sqlite")
+
+    assert policy.is_risky("DROP TABLE items")
+    assert policy.should_request_approval("DELETE FROM users")
+    assert "sqlite" in policy.summarize("DELETE FROM users")

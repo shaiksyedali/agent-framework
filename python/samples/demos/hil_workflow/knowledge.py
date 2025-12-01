@@ -85,9 +85,16 @@ class IngestDocument:
 class LocalVectorRetriever:
     """Cosine-similarity retriever for pre-computed embeddings."""
 
-    def __init__(self, documents: Sequence[str], embeddings: Sequence[Sequence[float]], top_k: int = 4):
+    def __init__(
+        self,
+        documents: Sequence[str],
+        embeddings: Sequence[Sequence[float]],
+        metadata: Sequence[dict] | None = None,
+        top_k: int = 4,
+    ):
         self.documents = list(documents)
         self.embeddings = [list(vec) for vec in embeddings]
+        self.metadata = list(metadata or [{} for _ in documents])
         self.top_k = top_k
 
     @staticmethod
@@ -109,7 +116,12 @@ class LocalVectorRetriever:
                 reverse=True,
             )[: self.top_k]
             payload = [
-                {"doc_id": idx, "snippet": self.documents[idx], "score": round(self._cosine_similarity(query_vec, emb), 3)}
+                {
+                    "doc_id": idx,
+                    "snippet": self.documents[idx],
+                    "score": round(self._cosine_similarity(query_vec, emb), 3),
+                    "metadata": self.metadata[idx],
+                }
                 for idx, emb in ranked
             ]
             return json.dumps(payload)
@@ -120,22 +132,28 @@ class LocalVectorRetriever:
 class VectorStore:
     """Coordinates document ingestion, persistence, and retriever creation."""
 
-    def __init__(self, store: Store, *, backend: Optional[EmbeddingBackend] = None):
+    def __init__(self, store: Store, *, backend: Optional[EmbeddingBackend] = None, chunk_size: int = 400, overlap: int = 40):
         self.store = store
         self.backend = backend or EmbeddingBackend()
+        self.chunk_size = max(chunk_size, 1)
+        self.overlap = max(min(overlap, self.chunk_size - 1), 0)
 
     def ingest(self, workflow_id: str, documents: Iterable[IngestDocument]) -> int:
         count = 0
         for doc in documents:
-            embedding = self.backend.embed(doc.text)
-            self.store.upsert_document(
-                document_id=doc.id,
-                workflow_id=workflow_id,
-                content=doc.text,
-                embedding=embedding,
-                metadata=doc.metadata or {},
-            )
-            count += 1
+            base_meta = doc.metadata or {}
+            chunks = self._chunk_text(doc.text)
+            for idx, chunk in enumerate(chunks):
+                embedding = self.backend.embed(chunk)
+                metadata = {**base_meta, "chunk_index": idx, "source_id": doc.id}
+                self.store.upsert_document(
+                    document_id=f"{doc.id}:{idx}",
+                    workflow_id=workflow_id,
+                    content=chunk,
+                    embedding=embedding,
+                    metadata=metadata,
+                )
+                count += 1
         return count
 
     def retriever_for(self, workflow_id: str):
@@ -144,10 +162,32 @@ class VectorStore:
             return None
         texts = [doc.content for doc in docs]
         embeddings = [doc.embedding for doc in docs]
+        metadata = [doc.metadata for doc in docs]
         if self.backend.uses_azure:
             try:
-                return AzureEmbeddingRetriever(documents=texts, precomputed_embeddings=embeddings)
+                return AzureEmbeddingRetriever(
+                    documents=texts,
+                    precomputed_embeddings=embeddings,
+                    metadata=metadata,
+                )
             except Exception as exc:  # pragma: no cover - azure client failures
                 logger.warning("Azure retriever unavailable, using local vector retriever: %s", exc)
-        return LocalVectorRetriever(texts, embeddings)
+        return LocalVectorRetriever(texts, embeddings, metadata)
+
+    def _chunk_text(self, text: str) -> list[str]:
+        cleaned = (text or "").strip()
+        if not cleaned:
+            return []
+        if len(cleaned) <= self.chunk_size:
+            return [cleaned]
+
+        chunks: list[str] = []
+        start = 0
+        while start < len(cleaned):
+            end = min(start + self.chunk_size, len(cleaned))
+            chunks.append(cleaned[start:end].strip())
+            if end == len(cleaned):
+                break
+            start = max(end - self.overlap, 0)
+        return [chunk for chunk in chunks if chunk]
 

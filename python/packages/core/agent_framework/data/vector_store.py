@@ -88,9 +88,13 @@ class DocumentIngestionService:
         *,
         embedding_model: EmbeddingModel | None = None,
         vector_store: VectorStore | None = None,
+        chunk_size: int = 500,
+        chunk_overlap: int = 50,
     ) -> None:
         self._embedding_model = embedding_model or SimpleEmbeddingModel()
         self._vector_store = vector_store or InMemoryVectorStore()
+        self._chunk_size = max(chunk_size, 1)
+        self._chunk_overlap = max(min(chunk_overlap, self._chunk_size - 1), 0)
 
     @property
     def embedding_model(self) -> EmbeddingModel:
@@ -100,16 +104,36 @@ class DocumentIngestionService:
     def vector_store(self) -> VectorStore:
         return self._vector_store
 
-    def ingest(self, documents: Sequence[str], *, metadata: Mapping[str, Any] | None = None) -> list[str]:
-        """Embed and persist documents, returning stored IDs."""
+    def ingest(
+        self,
+        documents: Sequence[str | Mapping[str, Any]],
+        *,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> list[str]:
+        """Embed and persist documents, returning stored IDs for each chunk."""
 
         stored_ids: list[str] = []
-        metadata = metadata or {}
-        for doc in documents:
-            embedding = self._embedding_model.embed(doc)
-            chunk = DocumentChunk(text=doc, embedding=embedding, metadata=metadata)
-            self._vector_store.add(chunk)
-            stored_ids.append(chunk.id)
+        base_metadata = metadata or {}
+        for idx, doc in enumerate(documents):
+            if isinstance(doc, Mapping):
+                text = str(doc.get("text", ""))
+                doc_meta = {**base_metadata, **{k: v for k, v in doc.items() if k != "text"}}
+                source_id = doc_meta.get("id") or doc_meta.get("source") or f"doc-{idx}"
+            else:
+                text = str(doc)
+                doc_meta = dict(base_metadata)
+                source_id = doc_meta.get("id") or f"doc-{idx}"
+
+            for chunk_index, chunk_text in enumerate(self._chunk_text(text)):
+                embedding = self._embedding_model.embed(chunk_text)
+                combined_meta = {
+                    **doc_meta,
+                    "chunk_index": chunk_index,
+                    "source_id": source_id,
+                }
+                chunk = DocumentChunk(text=chunk_text, embedding=embedding, metadata=combined_meta)
+                self._vector_store.add(chunk)
+                stored_ids.append(chunk.id)
         return stored_ids
 
     def search(self, query: str, *, top_k: int = 5) -> list[DocumentChunk]:
@@ -117,3 +141,20 @@ class DocumentIngestionService:
 
         embedding = self._embedding_model.embed(query)
         return [chunk for chunk, _ in self._vector_store.similarity_search(embedding, top_k=top_k)]
+
+    def _chunk_text(self, text: str) -> list[str]:
+        cleaned = (text or "").strip()
+        if not cleaned:
+            return []
+        if len(cleaned) <= self._chunk_size:
+            return [cleaned]
+
+        chunks: list[str] = []
+        start = 0
+        while start < len(cleaned):
+            end = min(start + self._chunk_size, len(cleaned))
+            chunks.append(cleaned[start:end].strip())
+            if end == len(cleaned):
+                break
+            start = max(end - self._chunk_overlap, 0)
+        return [chunk for chunk in chunks if chunk]

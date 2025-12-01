@@ -267,6 +267,7 @@ class Planner:
                 validator=self._sql_validator,
                 fetch_raw_after_aggregation=self._include_raw_rows,
                 enable_calculator_fallback=self._enable_calculator_fallback,
+                allow_writes=getattr(connector.approval_policy, "allow_writes", True),
             )
 
         summary = connector.approval_policy.summarize(self._truncate_goal(user_goal))

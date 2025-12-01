@@ -2,13 +2,24 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
+from urllib.parse import urlparse
 
+from agent_framework import MCPStreamableHTTPTool
+from agent_framework.agents.sql import SQLAgent, SQLExample
+from agent_framework.data.connectors import (
+    DataConnectorError,
+    DuckDBConnector as CoreDuckDBConnector,
+    PostgresConnector as CorePostgresConnector,
+    SQLApprovalPolicy,
+    SQLiteConnector as CoreSQLiteConnector,
+)
 from agent_framework.hil_workflow import (
     AzureEmbeddingRetriever,
     Engine,
@@ -106,19 +117,61 @@ class Runner:
         engine = definition.get("sqlEngine", "sqlite")
         knowledge_db = (definition.get("knowledge") or {}).get("database") or {}
         engine_override = knowledge_db.get("engine", engine)
+        approval_mode = knowledge_db.get("approvalMode", "always_require")
+        allow_writes = bool(knowledge_db.get("allowWrites", False))
+
         if engine_override == Engine.POSTGRES.value:
             dsn = knowledge_db.get("connectionString")
-            if not dsn:
-                raise ValueError("Postgres engine selected but no connectionString provided")
-            return PostgresConnector(dsn=dsn)
+            if not dsn or "://" not in dsn:
+                raise ValueError("Postgres engine selected but connectionString is invalid")
+            return PostgresConnector(dsn=dsn, approval_mode=approval_mode, allow_writes=allow_writes)
+
         if engine_override == Engine.DUCKDB.value:
             path = knowledge_db.get("path") or ":memory:"
             from agent_framework.hil_workflow import DuckDBConnector
 
-            return DuckDBConnector(path=path)
+            return DuckDBConnector(path=path, approval_mode=approval_mode, allow_writes=allow_writes)
+
         # default sqlite
         path = knowledge_db.get("path") or ":memory:"
-        return SQLiteConnector(path=path)
+        return SQLiteConnector(path=path, approval_mode=approval_mode, allow_writes=allow_writes)
+
+    def _build_data_connector(self, definition: Dict[str, Any]):
+        engine = definition.get("sqlEngine", "sqlite")
+        knowledge_db = (definition.get("knowledge") or {}).get("database") or {}
+        engine_override = knowledge_db.get("engine", engine)
+        approval_mode = knowledge_db.get("approvalMode", "always_require")
+        allow_writes = bool(knowledge_db.get("allowWrites", False))
+
+        policy = SQLApprovalPolicy(
+            approval_required=approval_mode != "never_require",
+            allow_writes=allow_writes,
+            engine=engine_override,
+        )
+
+        if engine_override == Engine.POSTGRES.value:
+            dsn = knowledge_db.get("connectionString")
+            if not dsn or urlparse(dsn).scheme not in {"postgres", "postgresql"}:
+                raise ValueError("Postgres engine selected but connectionString is invalid")
+            return CorePostgresConnector(connection_string=dsn, approval_policy=policy)
+
+        if engine_override == Engine.DUCKDB.value:
+            path = knowledge_db.get("path") or ":memory:"
+            return CoreDuckDBConnector(database=path, approval_policy=policy)
+
+        path = knowledge_db.get("path") or ":memory:"
+        return CoreSQLiteConnector(database=path, approval_policy=policy)
+
+    def _build_mcp_tool(self, definition: Dict[str, Any]):
+        knowledge = definition.get("knowledge") or {}
+        mcp_server = knowledge.get("mcpServer")
+        if not mcp_server:
+            return None
+        parsed = urlparse(mcp_server)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("mcpServer must be a valid http(s) URL")
+        approval_mode = knowledge.get("approvalMode", "always_require")
+        return MCPStreamableHTTPTool(name="mcp-server", url=mcp_server, approval_mode=approval_mode)
 
     async def _publish(self, run_id: str, event: StoredEvent) -> None:
         self.store.insert_event(event)
@@ -155,42 +208,53 @@ class Runner:
         self.store.record_decision(run_id, decision_value, reason)
         return decision_value == "approved"
 
-    async def _sql_probe(self, run_id: str, connector: SQLConnector, goal: str) -> bool:
-        tables = []
+    async def _sql_probe(self, run_id: str, connector: SQLConnector, goal: str, definition: Dict[str, Any]) -> bool:
         try:
-            tables = connector.list_tables()
+            data_connector = self._build_data_connector(definition)
         except Exception as exc:  # pragma: no cover - defensive
-            await self._emit(run_id, "status", f"Table discovery failed: {exc}", {"status": "failed"})
+            await self._emit(run_id, "sql", f"Skipping SQL probe: {exc}", {"status": "skipped"})
             return False
 
-        if not tables:
-            await self._emit(run_id, "sql", "No tables available to run SQL", {"status": "skipped"})
-            return False
-
-        target_table = tables[0]
-        for attempt in range(1, 4):
-            try:
-                preview_rows = connector.preview(target_table, limit=5)
-                query = f"SELECT * FROM {target_table} LIMIT 5"
-                detail = {"table": target_table, "rows": preview_rows, "attempt": attempt, "goal": goal, "query": query}
-                self._record_artifact(run_id, "sql-preview", detail)
-                await self._emit(run_id, "sql", f"SQL attempt {attempt} succeeded", detail)
-                return True
-            except Exception as exc:  # pragma: no cover - defensive
-                await self._emit(
-                    run_id,
-                    "status",
-                    f"SQL attempt {attempt} failed",
-                    {"status": "running", "attempt": attempt, "error": str(exc)},
+        examples: list[SQLExample] = []
+        for item in definition.get("sqlHistory", []) or []:
+            if isinstance(item, dict) and "question" in item and "sql" in item:
+                examples.append(
+                    SQLExample(question=str(item["question"]), sql=str(item["sql"]), answer=item.get("answer"))
                 )
-        await self._emit(run_id, "status", "SQL retries exhausted", {"status": "failed"})
-        return False
+
+        agent = SQLAgent(few_shot_examples=examples)
+
+        try:
+            result = await agent.generate_and_execute(
+                goal,
+                data_connector,
+                max_attempts=3,
+                fetch_raw_after_aggregation=True,
+                allow_writes=getattr(data_connector.approval_policy, "allow_writes", True),
+            )
+        except DataConnectorError as exc:
+            await self._emit(run_id, "sql", f"SQL failed: {exc}", {"status": "failed"})
+            return False
+
+        detail = {
+            "sql": result.sql,
+            "rows": result.rows,
+            "raw_rows": result.raw_rows,
+            "attempts": [attempt.__dict__ for attempt in result.attempts],
+        }
+        self._record_artifact(run_id, "sql-preview", detail)
+        await self._emit(run_id, "sql", "SQL probe completed", detail)
+        return bool(result.rows)
 
     async def _rag_probe(self, run_id: str, retriever: LocalRetriever | AzureEmbeddingRetriever, goal: str) -> None:
         try:
             tool = retriever.tool()
             snippets = tool(goal)
-            payload = {"question": goal, "snippets": snippets}
+            try:
+                parsed = json.loads(snippets)
+            except Exception:
+                parsed = snippets
+            payload = {"question": goal, "snippets": parsed}
             self._record_artifact(run_id, "rag-snippets", payload)
             await self._emit(run_id, "rag", "Retrieved supporting snippets", payload)
         except Exception as exc:  # pragma: no cover - defensive
@@ -211,9 +275,12 @@ class Runner:
         )
         connector = self._build_connector(wf.definition)
         retriever = self._build_retriever(wf.id, wf.definition.get("knowledge") or {})
+        mcp_tool = self._build_mcp_tool(wf.definition)
 
         try:
-            orchestrator = HilOrchestrator(config=config, sql_connector=connector, retriever=retriever)
+            orchestrator = HilOrchestrator(
+                config=config, sql_connector=connector, retriever=retriever, mcp_tool=mcp_tool
+            )
             workflow = orchestrator.build()
         except Exception as exc:  # pragma: no cover - defensive fallback when chat is unavailable
             await self._emit(
@@ -245,7 +312,7 @@ class Runner:
                     self._record_artifact(run_id, "chat-history", payload)
 
             # Run an explicit SQL + RAG probe for deterministic observability
-            sql_ok = await self._sql_probe(run_id, connector, wf.definition.get("goals", "Execute workflow"))
+            sql_ok = await self._sql_probe(run_id, connector, wf.definition.get("goals", "Execute workflow"), wf.definition)
             if retriever:
                 await self._rag_probe(run_id, retriever, wf.definition.get("goals", "Execute workflow"))
             if sql_ok:

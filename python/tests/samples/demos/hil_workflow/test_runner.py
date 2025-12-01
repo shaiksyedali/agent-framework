@@ -220,3 +220,52 @@ async def _run_emit_redaction(tmp_path):
 
 def test_emit_redacts_detail(tmp_path):
     asyncio.run(_run_emit_redaction(tmp_path))
+
+
+async def _run_emit_nested_redaction(tmp_path):
+    store = persistence.Store(tmp_path / "events.sqlite")
+    runner_instance = runner.Runner(store)
+    run_id = "run-2"
+
+    queue = runner_instance.bus.subscribe(run_id)
+
+    detail = {
+        "notifications": [
+            {
+                "methods": (
+                    "email user@example.com",
+                    [
+                        "sms +12345678901",
+                        {
+                            "via": ("call 5551234567",),
+                        },
+                    ],
+                )
+            }
+        ]
+    }
+
+    await runner_instance._emit(run_id, "status", "Contact +19876543210", detail)
+
+    stored_events = store.list_events(run_id)
+    assert len(stored_events) == 1
+    expected_detail = {
+        "notifications": [
+            {
+                "methods": [
+                    "email [redacted]",
+                    ["sms [redacted]", {"via": ["call [redacted]"]}],
+                ]
+            }
+        ]
+    }
+    assert stored_events[0].detail == expected_detail
+    assert stored_events[0].message == "Contact [redacted]"
+
+    emitted_event = await queue.get()
+    assert emitted_event.detail == expected_detail
+    assert emitted_event.message == "Contact [redacted]"
+
+
+def test_emit_redacts_nested_detail(tmp_path):
+    asyncio.run(_run_emit_nested_redaction(tmp_path))

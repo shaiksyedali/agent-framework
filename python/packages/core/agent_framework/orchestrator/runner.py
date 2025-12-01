@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 from typing import AsyncIterator
 
 from agent_framework.agents.sql import SQLExecutionResult
+from agent_framework.observability import get_meter, get_tracer
 
 from .approvals import (
     ApprovalCallback,
@@ -29,6 +31,28 @@ from .events import (
     SQLExecutionEvent,
 )
 from .graph import StepDefinition, StepGraph
+
+
+logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
+meter = get_meter(__name__)
+
+step_counter = meter.create_counter(
+    name="agent_steps_total",
+    description="Count of orchestrated steps processed",
+)
+failure_counter = meter.create_counter(
+    name="agent_failures_total",
+    description="Count of orchestrated steps that surfaced failures",
+)
+approval_counter = meter.create_counter(
+    name="agent_approvals_total",
+    description="Count of approvals evaluated for orchestrated steps",
+)
+sql_attempt_counter = meter.create_counter(
+    name="agent_sql_attempts_total",
+    description="Count of SQL execution attempts emitted from orchestrator steps",
+)
 
 
 class OrchestrationError(Exception):
@@ -92,81 +116,162 @@ class Orchestrator:
         graph.validate_acyclic()
         completed: set[str] = set()
 
-        yield OrchestrationStartedEvent(context_snapshot=_snapshot_context(context))
+        with tracer.start_as_current_span(
+            "orchestration.run",
+            attributes={
+                "workflow.id": context.workflow_id,
+                "workflow.step_count": len(graph),
+            },
+        ):
+            logger.info(
+                "orchestration.start",
+                extra={"event_name": "orchestration_start", "workflow_id": context.workflow_id},
+            )
 
-        while len(completed) < len(graph):
-            ready = graph.ready_steps(completed)
-            if not ready:
-                raise OrchestrationError(
-                    "No executable steps found; the graph may contain unresolved dependencies"
-                )
-            for step in ready:
-                async for event in self._run_step(step, context):
-                    yield event
-                completed.add(step.step_id)
+            yield OrchestrationStartedEvent(context_snapshot=_snapshot_context(context))
 
-        yield OrchestrationCompletedEvent(context_snapshot=_snapshot_context(context))
+            while len(completed) < len(graph):
+                ready = graph.ready_steps(completed)
+                if not ready:
+                    raise OrchestrationError(
+                        "No executable steps found; the graph may contain unresolved dependencies"
+                    )
+                for step in ready:
+                    async for event in self._run_step(step, context):
+                        yield event
+                    completed.add(step.step_id)
+
+            yield OrchestrationCompletedEvent(context_snapshot=_snapshot_context(context))
+            logger.info(
+                "orchestration.completed",
+                extra={
+                    "event_name": "orchestration_completed",
+                    "workflow_id": context.workflow_id,
+                    "steps_completed": len(completed),
+                },
+            )
 
     async def _run_step(
         self, step: StepDefinition, context: OrchestrationContext
     ) -> AsyncIterator[OrchestrationEvent]:
-        yield OrchestrationStepStartedEvent(
-            step_id=step.step_id,
-            step_name=step.name,
-            context_snapshot=_snapshot_context(context),
-        )
-
-        plan_artifact = step.metadata.get("plan_artifact")
-        if plan_artifact is not None:
-            yield PlanProposedEvent(plan=plan_artifact, context_snapshot=_snapshot_context(context))
-
-        if step.approval_type is not None:
-            request = ApprovalRequest(
+        with tracer.start_as_current_span(
+            "orchestration.step",
+            attributes={"step.id": step.step_id, "step.name": step.name, "step.approval": str(step.approval_type)},
+        ) as span:
+            step_counter.add(1, {"step_name": step.name, "step_id": step.step_id})
+            yield OrchestrationStepStartedEvent(
                 step_id=step.step_id,
                 step_name=step.name,
-                approval_type=step.approval_type,
-                summary=step.summary,
-                policy_tags=self._derive_policy_tags(step),
-            )
-            yield ApprovalRequiredEvent(
-                request=request,
                 context_snapshot=_snapshot_context(context),
             )
-            decision = await self._approval_policy.evaluate(request, self._approval_callback)
-            if not decision.approved:
-                raise ApprovalDeniedError(request, decision)
-
-        try:
-            result = await _resolve_action(step, context)
-        except Exception as exc:  # pragma: no cover - exception path validated via events
-            yield OrchestrationStepFailedEvent(
-                step_id=step.step_id,
-                step_name=step.name,
-                error=str(exc),
-                context_snapshot=_snapshot_context(context),
+            logger.info(
+                "orchestration.step_start",
+                extra={
+                    "event_name": "step_start",
+                    "step_id": step.step_id,
+                    "step_name": step.name,
+                    "approval_type": str(step.approval_type),
+                },
             )
-            raise
 
-        if isinstance(result, SQLExecutionResult):
-            for attempt in result.attempts:
-                yield SQLExecutionEvent(
+            plan_artifact = step.metadata.get("plan_artifact")
+            if plan_artifact is not None:
+                yield PlanProposedEvent(plan=plan_artifact, context_snapshot=_snapshot_context(context))
+
+            if step.approval_type is not None:
+                request = ApprovalRequest(
                     step_id=step.step_id,
                     step_name=step.name,
-                    sql=attempt.sql,
-                    rows=attempt.rows,
-                    raw_rows=attempt.raw_rows,
-                    error=attempt.error,
+                    approval_type=step.approval_type,
+                    summary=step.summary,
+                    policy_tags=self._derive_policy_tags(step),
+                )
+                approval_counter.add(1, {"approval_type": step.approval_type.value})
+                yield ApprovalRequiredEvent(
+                    request=request,
                     context_snapshot=_snapshot_context(context),
                 )
+                logger.info(
+                    "orchestration.approval_required",
+                    extra={
+                        "event_name": "approval_required",
+                        "step_id": step.step_id,
+                        "approval_type": step.approval_type.value,
+                    },
+                )
+                decision = await self._approval_policy.evaluate(request, self._approval_callback)
+                if not decision.approved:
+                    failure_counter.add(1, {"step_id": step.step_id, "reason": "approval_denied"})
+                    span.set_attribute("step.denied", True)
+                    raise ApprovalDeniedError(request, decision)
 
-        context.transient_artifacts[step.step_id] = result
+            try:
+                result = await _resolve_action(step, context)
+            except Exception as exc:  # pragma: no cover - exception path validated via events
+                failure_counter.add(1, {"step_id": step.step_id, "reason": type(exc).__name__})
+                yield OrchestrationStepFailedEvent(
+                    step_id=step.step_id,
+                    step_name=step.name,
+                    error=str(exc),
+                    context_snapshot=_snapshot_context(context),
+                )
+                logger.info(
+                    "orchestration.step_failed",
+                    extra={
+                        "event_name": "step_failed",
+                        "step_id": step.step_id,
+                        "step_name": step.name,
+                        "error": str(exc),
+                    },
+                )
+                raise
 
-        yield OrchestrationStepCompletedEvent(
-            step_id=step.step_id,
-            step_name=step.name,
-            result=result,
-            context_snapshot=_snapshot_context(context),
-        )
+            context.transient_artifacts[step.step_id] = result
+
+            if isinstance(result, SQLExecutionResult):
+                for attempt in result.attempts:
+                    sql_attempt_counter.add(
+                        1,
+                        {
+                            "step_id": step.step_id,
+                            "step_name": step.name,
+                            "outcome": "success" if attempt.error is None else "error",
+                        },
+                    )
+                    logger.info(
+                        "orchestration.sql_attempt",
+                        extra={
+                            "event_name": "sql_attempt",
+                            "step_id": step.step_id,
+                            "step_name": step.name,
+                            "sql": attempt.sql,
+                            "error": attempt.error,
+                        },
+                    )
+                    yield SQLExecutionEvent(
+                        step_id=step.step_id,
+                        step_name=step.name,
+                        sql=attempt.sql,
+                        rows=attempt.rows,
+                        raw_rows=attempt.raw_rows,
+                        error=attempt.error,
+                        context_snapshot=_snapshot_context(context),
+                    )
+
+            yield OrchestrationStepCompletedEvent(
+                step_id=step.step_id,
+                step_name=step.name,
+                result=result,
+                context_snapshot=_snapshot_context(context),
+            )
+            logger.info(
+                "orchestration.step_completed",
+                extra={
+                    "event_name": "step_completed",
+                    "step_id": step.step_id,
+                    "step_name": step.name,
+                },
+            )
 
     @staticmethod
     def _derive_policy_tags(step: StepDefinition) -> set[str]:

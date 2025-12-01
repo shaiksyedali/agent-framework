@@ -4,11 +4,31 @@ from __future__ import annotations
 
 import ast
 import inspect
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Sequence
 
 from agent_framework.data.connectors import DataConnectorError, SQLApprovalPolicy, SQLConnector
+from agent_framework.observability import get_meter, get_tracer
+
+
+logger = logging.getLogger(__name__)
+tracer = get_tracer(__name__)
+meter = get_meter(__name__)
+
+sql_attempt_counter = meter.create_counter(
+    name="agent_sql_generation_attempts_total",
+    description="Count of SQL generation/execution attempts from SQLAgent",
+)
+sql_retry_counter = meter.create_counter(
+    name="agent_sql_retries_total",
+    description="Count of retries performed by SQLAgent",
+)
+sql_failure_counter = meter.create_counter(
+    name="agent_sql_failures_total",
+    description="Count of failed SQL attempts (including validator failures)",
+)
 
 
 @dataclass
@@ -134,73 +154,108 @@ class SQLAgent:
             max_examples=self._few_shot_limit,
         )
 
-        for _ in range(max_attempts):
+        for attempt_index in range(max_attempts):
             prompt = prompt_builder.build(goal, feedback=feedback)
-            raw_response = await self._invoke_llm(prompt)
-            candidate_sql = self._extract_sql(raw_response)
+            with tracer.start_as_current_span(
+                "sql.generate_and_execute",
+                attributes={"goal": goal, "attempt": attempt_index + 1},
+            ) as span:
+                sql_attempt_counter.add(1, {"goal": goal})
+                if attempt_index:
+                    sql_retry_counter.add(1, {"goal": goal})
 
-            if enable_calculator_fallback and not self._looks_like_sql(candidate_sql):
-                try:
-                    calculator_value = self._evaluate_math_expression(candidate_sql)
-                    attempt = SQLAttempt(sql=None, rows=[{"result": calculator_value}], raw_rows=None)
-                    attempts.append(attempt)
-                    return SQLExecutionResult(sql=None, rows=attempt.rows, raw_rows=None, attempts=attempts)
-                except Exception as exc:  # pragma: no cover - defensive
-                    feedback = f"Calculator fallback failed: {exc}"
-                    attempts.append(SQLAttempt(sql=None, rows=None, raw_rows=None, error=str(exc), feedback=feedback))
+                raw_response = await self._invoke_llm(prompt)
+                candidate_sql = self._extract_sql(raw_response)
+                logger.info(
+                    "sql.attempt.start",
+                    extra={
+                        "event_name": "sql_attempt",
+                        "attempt": attempt_index + 1,
+                        "goal": goal,
+                        "candidate_sql": candidate_sql,
+                    },
+                )
+
+                if enable_calculator_fallback and not self._looks_like_sql(candidate_sql):
+                    try:
+                        calculator_value = self._evaluate_math_expression(candidate_sql)
+                        attempt = SQLAttempt(sql=None, rows=[{"result": calculator_value}], raw_rows=None)
+                        attempts.append(attempt)
+                        span.set_attribute("sql.fallback", "calculator")
+                        return SQLExecutionResult(sql=None, rows=attempt.rows, raw_rows=None, attempts=attempts)
+                    except Exception as exc:  # pragma: no cover - defensive
+                        feedback = f"Calculator fallback failed: {exc}"
+                        attempts.append(SQLAttempt(sql=None, rows=None, raw_rows=None, error=str(exc), feedback=feedback))
+                        sql_failure_counter.add(1, {"goal": goal, "reason": "calculator_fallback"})
+                        continue
+
+                if not candidate_sql:
+                    feedback = "No SQL statement was produced."
+                    attempts.append(SQLAttempt(sql=None, rows=None, raw_rows=None, error=feedback, feedback=feedback))
+                    sql_failure_counter.add(1, {"goal": goal, "reason": "no_sql"})
                     continue
 
-            if not candidate_sql:
-                feedback = "No SQL statement was produced."
-                attempts.append(SQLAttempt(sql=None, rows=None, raw_rows=None, error=feedback, feedback=feedback))
-                continue
+                if allow_writes is False and connector.approval_policy.is_risky(candidate_sql):
+                    reason = "Write operations are disabled by policy"
+                    attempts.append(SQLAttempt(sql=candidate_sql, rows=None, raw_rows=None, error=reason, feedback=reason))
+                    sql_failure_counter.add(1, {"goal": goal, "reason": "writes_blocked"})
+                    continue
 
-            if allow_writes is False and connector.approval_policy.is_risky(candidate_sql):
-                reason = "Write operations are disabled by policy"
-                attempts.append(SQLAttempt(sql=candidate_sql, rows=None, raw_rows=None, error=reason, feedback=reason))
-                continue
+                if self._requires_blocking(connector.approval_policy, candidate_sql):
+                    reason = "Approval required for risky statements"
+                    attempts.append(SQLAttempt(sql=candidate_sql, rows=None, raw_rows=None, error=reason, feedback=reason))
+                    sql_failure_counter.add(1, {"goal": goal, "reason": "approval_block"})
+                    raise DataConnectorError(reason)
 
-            if self._requires_blocking(connector.approval_policy, candidate_sql):
-                reason = "Approval required for risky statements"
-                attempts.append(SQLAttempt(sql=candidate_sql, rows=None, raw_rows=None, error=reason, feedback=reason))
-                raise DataConnectorError(reason)
+                try:
+                    rows = connector.run_query(candidate_sql)
+                    rows = connector.approval_policy.apply_row_limit(rows)
+                    if enforced_row_limit and enforced_row_limit > 0:
+                        rows = rows[:enforced_row_limit]
+                    if redaction_hook:
+                        rows = redaction_hook(rows)
+                    if verify_numeric_results:
+                        self._verify_numeric_rows(rows)
+                except DataConnectorError as exc:
+                    feedback = f"Error executing SQL: {exc}"
+                    attempts.append(SQLAttempt(sql=candidate_sql, rows=None, raw_rows=None, error=str(exc), feedback=feedback))
+                    sql_failure_counter.add(1, {"goal": goal, "reason": "execution_error"})
+                    span.record_exception(exc)
+                    continue
 
-            try:
-                rows = connector.run_query(candidate_sql)
-                rows = connector.approval_policy.apply_row_limit(rows)
-                if enforced_row_limit and enforced_row_limit > 0:
-                    rows = rows[:enforced_row_limit]
-                if redaction_hook:
-                    rows = redaction_hook(rows)
-                if verify_numeric_results:
-                    self._verify_numeric_rows(rows)
-            except DataConnectorError as exc:
-                feedback = f"Error executing SQL: {exc}"
-                attempts.append(SQLAttempt(sql=candidate_sql, rows=None, raw_rows=None, error=str(exc), feedback=feedback))
-                continue
+                if validator and not validator(rows):
+                    feedback = "Validator rejected the result as incorrect"
+                    attempts.append(SQLAttempt(sql=candidate_sql, rows=rows, raw_rows=None, error=feedback, feedback=feedback))
+                    sql_failure_counter.add(1, {"goal": goal, "reason": "validator_rejection"})
+                    continue
 
-            if validator and not validator(rows):
-                feedback = "Validator rejected the result as incorrect"
-                attempts.append(SQLAttempt(sql=candidate_sql, rows=rows, raw_rows=None, error=feedback, feedback=feedback))
-                continue
+                raw_rows: list[dict[str, Any]] | None = None
+                if fetch_raw_after_aggregation and self._has_aggregation(candidate_sql):
+                    raw_query = self._derive_raw_query(candidate_sql)
+                    if raw_query:
+                        try:
+                            raw_rows = connector.run_query(raw_query)
+                            raw_rows = connector.approval_policy.apply_row_limit(raw_rows)
+                            if enforced_row_limit and enforced_row_limit > 0:
+                                raw_rows = raw_rows[:enforced_row_limit]
+                            if redaction_hook:
+                                raw_rows = redaction_hook(raw_rows)
+                        except DataConnectorError:  # pragma: no cover - fallback
+                            raw_rows = None
 
-            raw_rows: list[dict[str, Any]] | None = None
-            if fetch_raw_after_aggregation and self._has_aggregation(candidate_sql):
-                raw_query = self._derive_raw_query(candidate_sql)
-                if raw_query:
-                    try:
-                        raw_rows = connector.run_query(raw_query)
-                        raw_rows = connector.approval_policy.apply_row_limit(raw_rows)
-                        if enforced_row_limit and enforced_row_limit > 0:
-                            raw_rows = raw_rows[:enforced_row_limit]
-                        if redaction_hook:
-                            raw_rows = redaction_hook(raw_rows)
-                    except DataConnectorError:  # pragma: no cover - fallback
-                        raw_rows = None
-
-            attempt = SQLAttempt(sql=candidate_sql, rows=rows, raw_rows=raw_rows)
-            attempts.append(attempt)
-            return SQLExecutionResult(sql=candidate_sql, rows=rows, raw_rows=raw_rows, attempts=attempts)
+                attempt = SQLAttempt(sql=candidate_sql, rows=rows, raw_rows=raw_rows)
+                attempts.append(attempt)
+                logger.info(
+                    "sql.attempt.complete",
+                    extra={
+                        "event_name": "sql_attempt_complete",
+                        "attempt": attempt_index + 1,
+                        "goal": goal,
+                        "candidate_sql": candidate_sql,
+                        "rows": rows,
+                    },
+                )
+                return SQLExecutionResult(sql=candidate_sql, rows=rows, raw_rows=raw_rows, attempts=attempts)
 
         raise DataConnectorError("Failed to generate valid SQL after retries")
 

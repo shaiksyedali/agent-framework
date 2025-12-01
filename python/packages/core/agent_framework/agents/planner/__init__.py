@@ -5,13 +5,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Awaitable, Callable, Iterable, Mapping, Sequence
 
 from agent_framework.data.connectors import SQLConnector
 from agent_framework.data.vector_store import DocumentIngestionService
 from agent_framework.orchestrator.approvals import ApprovalType
 from agent_framework.orchestrator.context import OrchestrationContext
 from agent_framework.orchestrator.graph import StepDefinition, StepGraph
+from agent_framework.agents.sql import SQLAgent, SQLExample
 
 
 class IntentType(str, Enum):
@@ -64,8 +65,24 @@ class PlanArtifact:
 class Planner:
     """Builds orchestrator graphs based on intent and available resources."""
 
-    def __init__(self, *, default_confidence: float = 0.55) -> None:
+    def __init__(
+        self,
+        *,
+        default_confidence: float = 0.55,
+        sql_llm: Callable[[str], Awaitable[str] | str] | None = None,
+        sql_history: Sequence[SQLExample] | None = None,
+        max_sql_attempts: int = 3,
+        sql_validator: Callable[[list[dict[str, Any]]], bool] | None = None,
+        include_raw_rows: bool = True,
+        enable_calculator_fallback: bool = True,
+    ) -> None:
         self._default_confidence = default_confidence
+        self._sql_llm = sql_llm
+        self._sql_history = list(sql_history or [])
+        self._max_sql_attempts = max_sql_attempts
+        self._sql_validator = sql_validator
+        self._include_raw_rows = include_raw_rows
+        self._enable_calculator_fallback = enable_calculator_fallback
 
     def classify_intent(
         self,
@@ -233,23 +250,38 @@ class Planner:
         context: OrchestrationContext,
     ) -> "_StepBundle":
         connector = self._expect_connector(context, selection.connector_key, SQLConnector)
-        planned_query = f"SELECT 1 as result -- planned for: {self._truncate_goal(user_goal)}"
+        agent = SQLAgent(
+            llm=self._sql_llm,
+            few_shot_examples=self._sql_history,
+        )
 
-        def execute_sql(_: OrchestrationContext):
-            return connector.run_query(planned_query)
+        async def execute_sql(_: OrchestrationContext):
+            history = self._collect_sql_history(context)
+            schema = connector.get_schema()
+            return await agent.generate_and_execute(
+                goal=user_goal,
+                connector=connector,
+                schema=schema,
+                history=history,
+                max_attempts=self._max_sql_attempts,
+                validator=self._sql_validator,
+                fetch_raw_after_aggregation=self._include_raw_rows,
+                enable_calculator_fallback=self._enable_calculator_fallback,
+            )
 
+        summary = connector.approval_policy.summarize(self._truncate_goal(user_goal))
         step_def = StepDefinition(
             step_id="execute_sql",
             name="Execute SQL",
             action=execute_sql,
-            approval_type=connector.approval_type if connector.approval_policy.should_request_approval(planned_query) else None,
-            summary=connector.approval_policy.summarize(planned_query),
-            metadata={"query": planned_query, "connector": selection.connector_key},
+            approval_type=connector.approval_type,
+            summary=summary,
+            metadata={"goal": user_goal, "connector": selection.connector_key},
         )
         plan_step = PlanStep(
             step_id="execute_sql",
             name="Execute SQL",
-            description=f"Run SQL against connector '{selection.connector_key}'",
+            description=f"Generate and run SQL against connector '{selection.connector_key}'",
             approval_type=step_def.approval_type,
             dependencies=["plan"],
         )
@@ -313,6 +345,22 @@ class Planner:
             dependencies=["plan"],
         )
         return _StepBundle(plan_step=plan_step, step_definition=step_def)
+
+    def _collect_sql_history(self, context: OrchestrationContext) -> list[SQLExample]:
+        combined: list[SQLExample] = list(self._sql_history)
+        context_history = context.workflow_metadata.get("sql_history", [])
+        for example in context_history:
+            if isinstance(example, SQLExample):
+                combined.append(example)
+            elif isinstance(example, dict) and "question" in example and "sql" in example:
+                combined.append(
+                    SQLExample(
+                        question=str(example["question"]),
+                        sql=str(example["sql"]),
+                        answer=example.get("answer"),
+                    )
+                )
+        return combined
 
     @staticmethod
     def _first_matching_key(mapping: Mapping[str, Any], expected_type: type) -> str | None:

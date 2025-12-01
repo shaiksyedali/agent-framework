@@ -9,6 +9,7 @@ from .approvals import ApprovalRequest, ApprovalDecision
 
 if TYPE_CHECKING:
     from agent_framework.agents.planner import PlanArtifact
+    from agent_framework.agents.sql import SQLExecutionResult
 
 
 @dataclass
@@ -64,3 +65,15 @@ class PlanProposedEvent(OrchestrationEvent):
     """Emitted when a planner has produced a plan to review."""
 
     plan: "PlanArtifact"
+
+
+@dataclass
+class SQLExecutionEvent(OrchestrationEvent):
+    """Stream details of SQL execution attempts."""
+
+    step_id: str
+    step_name: str
+    sql: str | None
+    rows: list[dict[str, Any]] | None = None
+    raw_rows: list[dict[str, Any]] | None = None
+    error: str | None = None

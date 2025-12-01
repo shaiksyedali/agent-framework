@@ -6,6 +6,8 @@ import asyncio
 import inspect
 from typing import AsyncIterator
 
+from agent_framework.agents.sql import SQLExecutionResult
+
 from .approvals import (
     ApprovalCallback,
     ApprovalDecision,
@@ -23,6 +25,7 @@ from .events import (
     OrchestrationStepFailedEvent,
     OrchestrationStepStartedEvent,
     PlanProposedEvent,
+    SQLExecutionEvent,
 )
 from .graph import StepDefinition, StepGraph
 
@@ -126,6 +129,18 @@ class Orchestrator:
                 context_snapshot=_snapshot_context(context),
             )
             raise
+
+        if isinstance(result, SQLExecutionResult):
+            for attempt in result.attempts:
+                yield SQLExecutionEvent(
+                    step_id=step.step_id,
+                    step_name=step.name,
+                    sql=attempt.sql,
+                    rows=attempt.rows,
+                    raw_rows=attempt.raw_rows,
+                    error=attempt.error,
+                    context_snapshot=_snapshot_context(context),
+                )
 
         context.transient_artifacts[step.step_id] = result
 

@@ -8,6 +8,7 @@ from .planner import (
     PlanStep,
     Planner,
 )
+from .sql import SQLAgent, SQLAttempt, SQLExample, SQLExecutionResult, SQLPromptBuilder
 
 __all__ = [
     "DataSourceSelection",
@@ -16,4 +17,9 @@ __all__ = [
     "PlanArtifact",
     "PlanStep",
     "Planner",
+    "SQLAgent",
+    "SQLAttempt",
+    "SQLExample",
+    "SQLExecutionResult",
+    "SQLPromptBuilder",
 ]

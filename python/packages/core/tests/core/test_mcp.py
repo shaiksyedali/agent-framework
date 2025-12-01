@@ -1005,14 +1005,16 @@ def test_local_mcp_websocket_tool_init():
     """Test MCPWebsocketTool initialization."""
     tool = MCPWebsocketTool(name="test", url="ws://localhost:8080")
     assert tool.name == "test"
-    assert tool.url == "ws://localhost:8080"
+    assert tool.url_description == "**********"
+    assert tool._secret_store.get_secret(tool._url_secret_key) == "ws://localhost:8080"
 
 
 def test_local_mcp_streamable_http_tool_init():
     """Test MCPStreamableHTTPTool initialization."""
     tool = MCPStreamableHTTPTool(name="test", url="http://localhost:8080")
     assert tool.name == "test"
-    assert tool.url == "http://localhost:8080"
+    assert tool.url_description == "**********"
+    assert tool._secret_store.get_secret(tool._url_secret_key) == "http://localhost:8080"
 
 
 # Integration test
@@ -1288,6 +1290,7 @@ def test_mcp_stdio_tool_get_mcp_client_with_env_and_kwargs():
         custom_param="value1",
         another_param=42,
     )
+    assert tool.env_description == "**********"
 
     with patch("agent_framework._mcp.stdio_client"), patch("agent_framework._mcp.StdioServerParameters") as mock_params:
         tool.get_mcp_client()
@@ -1313,6 +1316,7 @@ def test_mcp_streamable_http_tool_get_mcp_client_all_params():
         terminate_on_close=True,
         custom_param="test",
     )
+    assert tool.headers_description == "**********"
 
     with patch("agent_framework._mcp.streamablehttp_client") as mock_http_client:
         tool.get_mcp_client()

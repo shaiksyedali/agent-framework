@@ -47,6 +47,15 @@ class StoredEvent:
 
 
 @dataclass
+class StoredApproval:
+    id: str
+    run_id: str
+    decision: str
+    reason: str | None
+    timestamp: str
+
+
+@dataclass
 class StoredDocument:
     id: str
     workflow_id: str
@@ -179,6 +188,16 @@ class Store:
         cur.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
         self._conn.commit()
 
+    def get_run(self, run_id: str) -> Optional[StoredRun]:
+        cur = self._conn.cursor()
+        row = cur.execute(
+            "SELECT id, workflow_id, workflow_name, started_at, status, engine FROM runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return StoredRun(*row)
+
     def list_runs(self) -> List[StoredRun]:
         cur = self._conn.cursor()
         rows = cur.execute(
@@ -202,6 +221,30 @@ class Store:
         ).fetchall()
         return [StoredEvent(id=row[0], run_id=row[1], type=row[2], message=row[3], detail=json.loads(row[4]), timestamp=row[5]) for row in rows]
 
+    def list_events_since(self, run_id: str, after_event_id: str | None = None) -> List[StoredEvent]:
+        cur = self._conn.cursor()
+        if after_event_id:
+            anchor = cur.execute("SELECT timestamp FROM events WHERE id = ?", (after_event_id,)).fetchone()
+            if anchor is None:
+                after_event_id = None
+        if after_event_id:
+            rows = cur.execute(
+                """
+                SELECT id, run_id, type, message, detail, timestamp
+                FROM events
+                WHERE run_id = ? AND timestamp > (SELECT timestamp FROM events WHERE id = ?)
+                ORDER BY timestamp ASC
+                """,
+                (run_id, after_event_id),
+            ).fetchall()
+        else:
+            rows = cur.execute(
+                "SELECT id, run_id, type, message, detail, timestamp FROM events WHERE run_id = ? ORDER BY timestamp ASC",
+                (run_id,),
+            ).fetchall()
+
+        return [StoredEvent(id=row[0], run_id=row[1], type=row[2], message=row[3], detail=json.loads(row[4]), timestamp=row[5]) for row in rows]
+
     def record_decision(self, run_id: str, decision: str, reason: str | None) -> None:
         cur = self._conn.cursor()
         approval_id = f"appr_{run_id}_{int(datetime.now().timestamp())}"
@@ -210,6 +253,14 @@ class Store:
             (approval_id, run_id, decision, reason, _utc_now()),
         )
         self._conn.commit()
+
+    def list_approvals(self, run_id: str) -> List[StoredApproval]:
+        cur = self._conn.cursor()
+        rows = cur.execute(
+            "SELECT id, run_id, decision, reason, timestamp FROM approvals WHERE run_id = ? ORDER BY timestamp ASC",
+            (run_id,),
+        ).fetchall()
+        return [StoredApproval(id=row[0], run_id=row[1], decision=row[2], reason=row[3], timestamp=row[4]) for row in rows]
 
     def upsert_document(
         self,

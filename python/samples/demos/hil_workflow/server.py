@@ -8,13 +8,13 @@ import uuid
 from pathlib import Path
 from typing import AsyncIterator, List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .knowledge import IngestDocument, VectorStore
-from .persistence import Store, StoredEvent, StoredRun, _utc_now
+from .persistence import Store, StoredApproval, StoredEvent, StoredRun, _utc_now
 from .runner import Runner
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,13 @@ class RunRecord(BaseModel):
     startedAt: str
     status: str
     engine: str
+
+
+class ApprovalRecord(BaseModel):
+    id: str
+    decision: str
+    reason: str | None = None
+    timestamp: str
 
 
 class EventEnvelope(BaseModel):
@@ -111,6 +118,15 @@ def _stored_event_to_envelope(event: StoredEvent) -> EventEnvelope:
         message=event.message,
         detail=event.detail,
         timestamp=event.timestamp,
+    )
+
+
+def _stored_approval_to_record(approval: StoredApproval) -> ApprovalRecord:
+    return ApprovalRecord(
+        id=approval.id,
+        decision=approval.decision,
+        reason=approval.reason,
+        timestamp=approval.timestamp,
     )
 
 
@@ -194,23 +210,31 @@ async def list_runs():
     return {"items": [_stored_to_record(run) for run in store.list_runs()]}
 
 
+@app.get("/runs/{run_id}", response_model=dict)
+async def get_run(run_id: str):
+    run = store.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    approvals = [_stored_approval_to_record(a) for a in store.list_approvals(run_id)]
+    return {"run": _stored_to_record(run), "approvals": approvals}
+
+
 @app.get("/runs/{run_id}/artifacts", response_model=dict)
 async def list_artifacts(run_id: str):
-    if not any(r.id == run_id for r in store.list_runs()):
+    if not store.get_run(run_id):
         raise HTTPException(status_code=404, detail="Run not found")
     artifacts = store.list_artifacts(run_id)
     return {"items": [artifact.__dict__ for artifact in artifacts]}
 
 
 @app.get("/runs/{run_id}/events")
-async def stream_events(run_id: str):
+async def stream_events(run_id: str, since: str | None = None):
     # Validate run existence
-    found = [r for r in store.list_runs() if r.id == run_id]
-    if not found:
+    if not store.get_run(run_id):
         raise HTTPException(status_code=404, detail="Run not found")
 
     async def event_generator() -> AsyncIterator[bytes]:
-        async for event in runner.stream_events(run_id):
+        async for event in runner.stream_events(run_id, since=since):
             if event is None:
                 break
             payload = json.dumps(_stored_event_to_envelope(event).model_dump())
@@ -219,9 +243,39 @@ async def stream_events(run_id: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
+@app.websocket("/runs/{run_id}/events/ws")
+async def websocket_events(websocket: WebSocket, run_id: str, since: str | None = None):
+    run = store.get_run(run_id)
+    if not run:
+        await websocket.close(code=1008)
+        return
+
+    await websocket.accept()
+    try:
+        # Replay history
+        for event in store.list_events_since(run_id, after_event_id=since):
+            await websocket.send_json(_stored_event_to_envelope(event).model_dump())
+        # Stream live events
+        queue = runner.bus.subscribe(run_id)
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    await websocket.send_json({"type": "complete", "runId": run_id})
+                    break
+                await websocket.send_json(_stored_event_to_envelope(event).model_dump())
+        finally:
+            runner.bus.unsubscribe(run_id, queue)
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected for run %s", run_id)
+    except Exception as exc:  # pragma: no cover - runtime protection
+        logger.exception("WebSocket error for run %s: %s", run_id, exc)
+        await websocket.close(code=1011)
+
+
 @app.post("/runs/{run_id}/approve")
 async def approve_run(run_id: str, payload: DecisionPayload):
-    if not any(r.id == run_id for r in store.list_runs()):
+    if not store.get_run(run_id):
         raise HTTPException(status_code=404, detail="Run not found")
     runner.approve(run_id, payload.reason)
     return {"status": "ok", "reason": payload.reason}
@@ -229,8 +283,17 @@ async def approve_run(run_id: str, payload: DecisionPayload):
 
 @app.post("/runs/{run_id}/reject")
 async def reject_run(run_id: str, payload: DecisionPayload):
-    if not any(r.id == run_id for r in store.list_runs()):
+    if not store.get_run(run_id):
         raise HTTPException(status_code=404, detail="Run not found")
     runner.reject(run_id, payload.reason)
     store.update_run_status(run_id, "failed")
     return {"status": "ok", "reason": payload.reason}
+
+
+@app.get("/runs/{run_id}/approvals", response_model=dict)
+async def list_approvals(run_id: str):
+    run = store.get_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    approvals = [_stored_approval_to_record(a).model_dump() for a in store.list_approvals(run_id)]
+    return {"items": approvals, "run": _stored_to_record(run)}

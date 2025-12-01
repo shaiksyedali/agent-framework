@@ -89,9 +89,7 @@ class Runner:
             return Runner._redact(value)
         if isinstance(value, Mapping):
             return {key: Runner._redact_detail(val) for key, val in value.items()}
-        if isinstance(value, list):
-            return [Runner._redact_detail(item) for item in value]
-        if isinstance(value, tuple):
+        if isinstance(value, list | tuple):
             return [Runner._redact_detail(item) for item in value]
         return value
 

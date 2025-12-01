@@ -198,6 +198,7 @@ async def _run_emit_redaction(tmp_path):
     detail = {
         "contact": {"email": "user@example.com", "phone": "+12345678901"},
         "notes": ["Call 5551234567", {"alt": "user@example.com"}],
+        "metadata": {"channels": ("email user@example.com", "sms +19876543210")},
     }
 
     await runner_instance._emit(run_id, "status", "Reach out to user@example.com", detail)
@@ -207,6 +208,7 @@ async def _run_emit_redaction(tmp_path):
     expected_detail = {
         "contact": {"email": "[redacted]", "phone": "[redacted]"},
         "notes": ["Call [redacted]", {"alt": "[redacted]"}],
+        "metadata": {"channels": ["email [redacted]", "sms [redacted]"]},
     }
     assert stored_events[0].detail == expected_detail
     assert stored_events[0].message == "Reach out to [redacted]"

@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, create_model
 from ._tools import AIFunction, HostedMCPSpecificApproval
 from ._types import ChatMessage, Contents, DataContent, Role, TextContent, UriContent
 from .exceptions import ToolException, ToolExecutionException
+from .security.secrets import SecretStore
 
 if sys.version_info >= (3, 11):
     from typing import Self  # pragma: no cover
@@ -344,6 +345,7 @@ class MCPTool:
         request_timeout: int | None = None,
         chat_client: "ChatClientProtocol | None" = None,
         additional_properties: dict[str, Any] | None = None,
+        secret_store: SecretStore | None = None,
     ) -> None:
         """Initialize the MCP Tool base.
 
@@ -358,6 +360,8 @@ class MCPTool:
         self.additional_properties = additional_properties
         self.load_tools_flag = load_tools
         self.load_prompts_flag = load_prompts
+        self._secret_store = secret_store or SecretStore.global_store()
+        self._secret_prefix = f"mcp/{_normalize_mcp_name(name)}"
         self._exit_stack = AsyncExitStack()
         self.session = session
         self.request_timeout = request_timeout
@@ -817,6 +821,7 @@ class MCPStdioTool(MCPTool):
         encoding: str | None = None,
         chat_client: "ChatClientProtocol | None" = None,
         additional_properties: dict[str, Any] | None = None,
+        secret_store: SecretStore | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the MCP stdio tool.
@@ -848,6 +853,7 @@ class MCPStdioTool(MCPTool):
             env: The environment variables to set for the command.
             encoding: The encoding to use for the command output.
             chat_client: The chat client to use for sampling.
+            secret_store: Optional store for sensitive connection values.
             kwargs: Any extra arguments to pass to the stdio client.
         """
         super().__init__(
@@ -861,10 +867,15 @@ class MCPStdioTool(MCPTool):
             load_tools=load_tools,
             load_prompts=load_prompts,
             request_timeout=request_timeout,
+            secret_store=secret_store,
         )
         self.command = command
         self.args = args or []
-        self.env = env
+        self._env_secret_key = f"{self._secret_prefix}/env"
+        if env:
+            self._secret_store.set_secret(self._env_secret_key, json.dumps(env))
+        self.env_description = self._secret_store.describe(self._env_secret_key) if env else None
+        self.env = self.env_description
         self.encoding = encoding
         self._client_kwargs = kwargs
 
@@ -874,10 +885,13 @@ class MCPStdioTool(MCPTool):
         Returns:
             An async context manager for the stdio client transport.
         """
+        env: dict[str, str] | None = None
+        if env_secret := self._secret_store.get_secret(self._env_secret_key):
+            env = json.loads(env_secret)
         args: dict[str, Any] = {
             "command": self.command,
             "args": self.args,
-            "env": self.env,
+            "env": env,
         }
         if self.encoding:
             args["encoding"] = self.encoding
@@ -928,6 +942,7 @@ class MCPStreamableHTTPTool(MCPTool):
         terminate_on_close: bool | None = None,
         chat_client: "ChatClientProtocol | None" = None,
         additional_properties: dict[str, Any] | None = None,
+        secret_store: SecretStore | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the MCP streamable HTTP tool.
@@ -961,6 +976,7 @@ class MCPStreamableHTTPTool(MCPTool):
             sse_read_timeout: The timeout for reading from the SSE stream.
             terminate_on_close: Close the transport when the MCP client is terminated.
             chat_client: The chat client to use for sampling.
+            secret_store: Optional store for sensitive connection values.
             kwargs: Any extra arguments to pass to the SSE client.
         """
         super().__init__(
@@ -974,9 +990,17 @@ class MCPStreamableHTTPTool(MCPTool):
             load_tools=load_tools,
             load_prompts=load_prompts,
             request_timeout=request_timeout,
+            secret_store=secret_store,
         )
-        self.url = url
-        self.headers = headers or {}
+        self._url_secret_key = f"{self._secret_prefix}/http/url"
+        self._headers_secret_key = f"{self._secret_prefix}/http/headers"
+        self._secret_store.set_secret(self._url_secret_key, url)
+        if headers:
+            self._secret_store.set_secret(self._headers_secret_key, json.dumps(headers))
+        self.url_description = self._secret_store.describe(self._url_secret_key)
+        self.headers_description = self._secret_store.describe(self._headers_secret_key) if headers else None
+        self.url = self.url_description
+        self.headers = self.headers_description
         self.timeout = timeout
         self.sse_read_timeout = sse_read_timeout
         self.terminate_on_close = terminate_on_close
@@ -988,11 +1012,17 @@ class MCPStreamableHTTPTool(MCPTool):
         Returns:
             An async context manager for the streamable HTTP client transport.
         """
+        url = self._secret_store.get_secret(self._url_secret_key)
+        if not url:
+            raise ToolException("MCP streamable HTTP tool URL is missing")
+        headers = None
+        if headers_secret := self._secret_store.get_secret(self._headers_secret_key):
+            headers = json.loads(headers_secret)
         args: dict[str, Any] = {
-            "url": self.url,
+            "url": url,
         }
-        if self.headers:
-            args["headers"] = self.headers
+        if headers:
+            args["headers"] = headers
         if self.timeout is not None:
             args["timeout"] = self.timeout
         if self.sse_read_timeout is not None:
@@ -1039,6 +1069,7 @@ class MCPWebsocketTool(MCPTool):
         allowed_tools: Collection[str] | None = None,
         chat_client: "ChatClientProtocol | None" = None,
         additional_properties: dict[str, Any] | None = None,
+        secret_store: SecretStore | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the MCP WebSocket tool.
@@ -1068,6 +1099,7 @@ class MCPWebsocketTool(MCPTool):
             allowed_tools: A list of tools that are allowed to use this tool.
             additional_properties: Additional properties.
             chat_client: The chat client to use for sampling.
+            secret_store: Optional store for sensitive connection values.
             kwargs: Any extra arguments to pass to the WebSocket client.
         """
         super().__init__(
@@ -1081,8 +1113,12 @@ class MCPWebsocketTool(MCPTool):
             load_tools=load_tools,
             load_prompts=load_prompts,
             request_timeout=request_timeout,
+            secret_store=secret_store,
         )
-        self.url = url
+        self._url_secret_key = f"{self._secret_prefix}/websocket/url"
+        self._secret_store.set_secret(self._url_secret_key, url)
+        self.url_description = self._secret_store.describe(self._url_secret_key)
+        self.url = self.url_description
         self._client_kwargs = kwargs
 
     def get_mcp_client(self) -> _AsyncGeneratorContextManager[Any, None]:
@@ -1091,8 +1127,11 @@ class MCPWebsocketTool(MCPTool):
         Returns:
             An async context manager for the WebSocket client transport.
         """
+        url = self._secret_store.get_secret(self._url_secret_key)
+        if not url:
+            raise ToolException("MCP websocket tool URL is missing")
         args: dict[str, Any] = {
-            "url": self.url,
+            "url": url,
         }
         if self._client_kwargs:
             args.update(self._client_kwargs)

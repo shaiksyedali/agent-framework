@@ -317,10 +317,8 @@ class Runner:
         if run_id not in self.approvals:
             self.approvals[run_id] = ApprovalState(queue=asyncio.Queue())
         self.approvals[run_id].queue.put_nowait({"decision": "approved", "reason": reason})
-        self.store.record_decision(run_id, "approved", reason)
 
     def reject(self, run_id: str, reason: Optional[str] = None) -> None:
         if run_id not in self.approvals:
             self.approvals[run_id] = ApprovalState(queue=asyncio.Queue())
         self.approvals[run_id].queue.put_nowait({"decision": "rejected", "reason": reason})
-        self.store.record_decision(run_id, "rejected", reason)

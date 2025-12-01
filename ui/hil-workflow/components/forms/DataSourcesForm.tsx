@@ -13,14 +13,33 @@ const engines: Array<{ value: SqlEngine; label: string }> = [
   { value: 'postgres', label: 'Postgres' }
 ];
 
+const approvalModes = [
+  { value: 'always_require', label: 'Always require approval' },
+  { value: 'never_require', label: 'Skip approval (unsafe)' }
+];
+
 export default function DataSourcesForm({ knowledge, onChange }: Props) {
   const update = (partial: Partial<KnowledgeSources>) => onChange({ ...knowledge, ...partial });
   const engine = knowledge.database?.engine ?? 'sqlite';
   const dbValue = knowledge.database?.path ?? knowledge.database?.connectionString ?? '';
-  const showDbWarning =
-    engine === 'postgres'
-      ? !dbValue || !dbValue.includes('://')
-      : engine !== 'postgres' && !dbValue;
+  const approvalMode = knowledge.database?.approvalMode ?? 'always_require';
+
+  const dbValidation = (() => {
+    if (engine === 'postgres') {
+      if (!dbValue || !/^postgres(?:ql)?:\/\/.+/.test(dbValue)) {
+        return 'Postgres requires a full connection string (postgres://user:pass@host:5432/db)';
+      }
+      return null;
+    }
+    if (!dbValue) {
+      return 'Provide a file path for SQLite/DuckDB (e.g., /data/metrics.db).';
+    }
+    return null;
+  })();
+
+  const mcpValidation = knowledge.mcpServer && !/^https?:\/\//.test(knowledge.mcpServer)
+    ? 'MCP server must be an http(s) URL exposed by the backend.'
+    : null;
 
   return (
     <div style={{ marginTop: '1rem' }}>
@@ -34,6 +53,13 @@ export default function DataSourcesForm({ knowledge, onChange }: Props) {
             placeholder="Path or bucket to documents"
             value={knowledge.documentsPath ?? ''}
             onChange={e => update({ documentsPath: e.target.value })}
+          />
+          <textarea
+            className="textarea"
+            style={{ marginTop: '0.5rem' }}
+            placeholder="Optional: paste a representative doc to ingest with the workflow"
+            value={knowledge.documentText ?? ''}
+            onChange={e => update({ documentText: e.target.value })}
           />
         </div>
         <div className="card" style={{ padding: '0.75rem 1rem' }}>
@@ -62,16 +88,63 @@ export default function DataSourcesForm({ knowledge, onChange }: Props) {
                 database: {
                   engine: knowledge.database?.engine ?? 'sqlite',
                   path: isConnection ? undefined : value,
-                  connectionString: isConnection ? value : undefined
+                  connectionString: isConnection ? value : undefined,
+                  approvalMode: knowledge.database?.approvalMode ?? 'always_require',
+                  allowWrites: knowledge.database?.allowWrites ?? false
                 }
               });
             }}
           />
-          {showDbWarning && (
-            <p className="muted" style={{ marginTop: '0.25rem' }}>
-              {engine === 'postgres'
-                ? 'Enter a full postgres connection string (e.g., postgres://user:pass@host:5432/dbname).'
-                : 'Provide a file path for sqlite/duckdb so the workflow can introspect tables.'}
+          <div className="split" style={{ marginTop: '0.35rem' }}>
+            <div>
+              <label className="section-title">Approval policy</label>
+              <select
+                className="select"
+                style={{ marginTop: '0.25rem' }}
+                value={approvalMode}
+                onChange={e =>
+                  update({
+                    database: {
+                      ...knowledge.database,
+                      engine,
+                      approvalMode: e.target.value as 'always_require' | 'never_require'
+                    }
+                  })
+                }
+              >
+                {approvalModes.map(mode => (
+                  <option key={mode.value} value={mode.value}>
+                    {mode.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="section-title">Writes</label>
+              <div style={{ marginTop: '0.55rem' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--muted)' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(knowledge.database?.allowWrites)}
+                    onChange={e =>
+                      update({
+                        database: {
+                          ...knowledge.database,
+                          engine,
+                          allowWrites: e.target.checked,
+                          approvalMode
+                        }
+                      })
+                    }
+                  />
+                  Allow UPDATE/DELETE
+                </label>
+              </div>
+            </div>
+          </div>
+          {dbValidation && (
+            <p className="muted" style={{ marginTop: '0.25rem', color: 'var(--danger)' }}>
+              {dbValidation}
             </p>
           )}
         </div>
@@ -80,10 +153,15 @@ export default function DataSourcesForm({ knowledge, onChange }: Props) {
           <input
             className="input"
             style={{ marginTop: '0.5rem' }}
-            placeholder="wss:// or grpc target"
+            placeholder="http(s) MCP endpoint exposed by backend"
             value={knowledge.mcpServer ?? ''}
             onChange={e => update({ mcpServer: e.target.value })}
           />
+          {mcpValidation && (
+            <p className="muted" style={{ marginTop: '0.25rem', color: 'var(--danger)' }}>
+              {mcpValidation}
+            </p>
+          )}
         </div>
       </div>
     </div>

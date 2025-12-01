@@ -23,8 +23,19 @@ export interface KnowledgeSources {
     engine: SqlEngine;
     path?: string;
     connectionString?: string;
+    approvalMode?: 'always_require' | 'never_require';
+    allowWrites?: boolean;
   };
   mcpServer?: string;
+  documentText?: string;
+}
+
+export interface ArtifactRecord {
+  id: string;
+  runId: string;
+  kind: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface EventEnvelope {

@@ -3,7 +3,7 @@ import sqlite3
 import pytest
 
 from agent_framework.agents import Planner, SQLAgent, SQLExample
-from agent_framework.data.connectors import SQLApprovalPolicy, SQLiteConnector
+from agent_framework.data import DataConnectorError, SQLApprovalPolicy, SQLiteConnector
 from agent_framework.orchestrator import (
     ApprovalDecision,
     ApprovalRequiredEvent,
@@ -102,6 +102,21 @@ async def test_sql_agent_calculator_fallback():
 
     assert result.sql is None
     assert result.rows and pytest.approx(result.rows[0]["result"]) == 14.0
+
+
+@pytest.mark.asyncio
+async def test_sql_agent_blocks_writes_when_disabled(tmp_path):
+    db_path = tmp_path / "readonly.sqlite"
+    connection = sqlite3.connect(db_path)
+    connection.execute("CREATE TABLE items (id INTEGER)")
+    connection.commit()
+    connection.close()
+
+    connector = SQLiteConnector(database=str(db_path), approval_policy=SQLApprovalPolicy(allow_writes=False))
+    agent = SQLAgent(llm=lambda _: "DELETE FROM items")
+
+    with pytest.raises(DataConnectorError):
+        await agent.generate_and_execute("delete all", connector, max_attempts=1)
 
 
 @pytest.mark.asyncio

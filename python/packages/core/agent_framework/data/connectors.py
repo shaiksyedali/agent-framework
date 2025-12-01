@@ -19,6 +19,7 @@ class SQLApprovalPolicy:
     """Controls when SQL execution should trigger an approval gate."""
 
     approval_required: bool = True
+    allow_writes: bool = True
     preview_limit: int = 120
     summary_prefix: str = "Execute SQL query"
     engine: str = "generic"

@@ -15,7 +15,7 @@ import re
 import sqlite3
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Annotated, Callable, List, Optional, Sequence
+from typing import Annotated, Any, Callable, List, Optional, Sequence
 
 try:  # Optional dependency for DuckDB-backed workflows
     import duckdb
@@ -255,6 +255,7 @@ class AzureEmbeddingRetriever:
         self,
         documents: Optional[List[str]] = None,
         precomputed_embeddings: Optional[List[List[float]]] = None,
+        metadata: Optional[List[dict]] = None,
         top_k: int = 4,
         *,
         embed_deployment: Optional[str] = None,
@@ -264,6 +265,7 @@ class AzureEmbeddingRetriever:
     ):
         self.documents = documents or []
         self.top_k = top_k
+        self.metadata = metadata or [{} for _ in self.documents]
         self.embed_deployment = embed_deployment or os.getenv("AZURE_EMBED_DEPLOYMENT")
         self.endpoint = endpoint or os.getenv("AZURE_OPENAI_ENDPOINT")
         self.api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY")
@@ -309,7 +311,12 @@ class AzureEmbeddingRetriever:
                 reverse=True,
             )[: self.top_k]
             payload = [
-                {"doc_id": idx, "snippet": doc, "score": round(self._cosine_similarity(query_embedding, emb), 3)}
+                {
+                    "doc_id": idx,
+                    "snippet": doc,
+                    "score": round(self._cosine_similarity(query_embedding, emb), 3),
+                    "metadata": self.metadata[idx] if idx < len(self.metadata) else {},
+                }
                 for idx, (doc, emb) in enumerate(ranked)
             ]
             return json.dumps(payload)
@@ -324,6 +331,7 @@ class HilOrchestrator:
     config: WorkflowConfig
     sql_connector: SQLConnector
     retriever: Optional[LocalRetriever | AzureEmbeddingRetriever] = None
+    mcp_tool: Any | None = None
     extra_agents: Sequence[ChatAgent] = field(default_factory=list)
     chat_client_factory: Optional[Callable[[], AzureOpenAIChatClient]] = None
     _chat_client: Optional[AzureOpenAIChatClient] = field(default=None, init=False, repr=False)
@@ -354,6 +362,8 @@ class HilOrchestrator:
         tools = list(self.sql_connector.tools())
         if self.retriever:
             tools.append(self.retriever.tool())
+        if self.mcp_tool:
+            tools.append(self.mcp_tool)
         return ChatAgent(
             name="Planner",
             chat_client=self._ensure_chat_client(),
@@ -366,21 +376,27 @@ class HilOrchestrator:
             "Generate and execute SQL using few-shots, schema, and feedback. "
             "Retry on errors up to 3 times and surface raw rows for aggregations."
         )
+        tools = list(self.sql_connector.tools())
+        if self.mcp_tool:
+            tools.append(self.mcp_tool)
         return ChatAgent(
             name="SQLAgent",
             chat_client=self._ensure_chat_client(),
             instructions=instructions,
-            tools=list(self.sql_connector.tools()),
+            tools=tools,
         )
 
     def _rag_agent(self) -> Optional[ChatAgent]:
         if not self.retriever:
             return None
+        tools = [self.retriever.tool()]
+        if self.mcp_tool:
+            tools.append(self.mcp_tool)
         return ChatAgent(
             name="RAGAgent",
             chat_client=self._ensure_chat_client(),
             instructions="Answer with cited snippets from retrieved docs.",
-            tools=[self.retriever.tool()],
+            tools=tools,
         )
 
     def _reasoner_agent(self) -> ChatAgent:
@@ -391,6 +407,8 @@ class HilOrchestrator:
         tools: List[Callable] = []
         if self.config.calculator_tool:
             tools.append(self.config.calculator_tool)
+        if self.mcp_tool:
+            tools.append(self.mcp_tool)
         return ChatAgent(
             name="Reasoner",
             chat_client=self._ensure_chat_client(),
@@ -403,10 +421,14 @@ class HilOrchestrator:
             f"You are the response formatter for {self.config.persona}. "
             "Summarize the workflow outcome with citations and suggest a follow-up question."
         )
+        tools: list[Callable] = []
+        if self.mcp_tool:
+            tools.append(self.mcp_tool)
         return ChatAgent(
             name="Responder",
             chat_client=self._ensure_chat_client(),
             instructions=instructions,
+            tools=tools,
         )
 
     def build(self):

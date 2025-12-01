@@ -111,11 +111,15 @@ class SQLAgent:
         validator: Callable[[list[dict[str, Any]]], bool] | None = None,
         fetch_raw_after_aggregation: bool = True,
         enable_calculator_fallback: bool = True,
+        allow_writes: bool | None = None,
     ) -> SQLExecutionResult:
         """Generate SQL for a goal, run it, and retry on errors or invalid answers."""
 
         attempts: list[SQLAttempt] = []
         feedback: str | None = None
+        allow_writes = allow_writes if allow_writes is not None else getattr(
+            connector.approval_policy, "allow_writes", True
+        )
         schema_text = schema or connector.get_schema()
         examples: list[SQLExample] = list(self._few_shot_examples)
         if history:
@@ -145,6 +149,11 @@ class SQLAgent:
             if not candidate_sql:
                 feedback = "No SQL statement was produced."
                 attempts.append(SQLAttempt(sql=None, rows=None, raw_rows=None, error=feedback, feedback=feedback))
+                continue
+
+            if allow_writes is False and connector.approval_policy.is_risky(candidate_sql):
+                reason = "Write operations are disabled by policy"
+                attempts.append(SQLAttempt(sql=candidate_sql, rows=None, raw_rows=None, error=reason, feedback=reason))
                 continue
 
             if self._requires_blocking(connector.approval_policy, candidate_sql):

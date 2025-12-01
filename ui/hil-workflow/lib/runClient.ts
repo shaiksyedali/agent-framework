@@ -1,5 +1,4 @@
 import { fetchApiRuns, startApiRun, apiAvailable } from './apiClient';
-import { startMockRun } from './mockClient';
 import type { EventEnvelope, RunRecord, WorkflowDefinition } from './types';
 
 export interface RunHandle {
@@ -8,23 +7,20 @@ export interface RunHandle {
   approve: (reason?: string) => Promise<void> | void;
   reject: (reason?: string) => Promise<void> | void;
   stop?: () => void;
+  workflowId?: string;
 }
 
-export async function startRun(definition: WorkflowDefinition): Promise<RunHandle> {
-  if (apiAvailable) {
-    try {
-      return await startApiRun(definition);
-    } catch (err) {
-      console.error('Falling back to mock run after API error', err);
-    }
+export async function startRun(
+  definition: WorkflowDefinition,
+  opts?: { onProgress?: (status: string) => void }
+): Promise<RunHandle> {
+  if (!apiAvailable) {
+    throw new Error('Backend API is not configured. Set NEXT_PUBLIC_HIL_API_BASE.');
   }
-  return startMockRun(definition);
+  return startApiRun(definition, opts?.onProgress);
 }
 
 export async function loadRuns(): Promise<RunRecord[]> {
-  if (!apiAvailable) {
-    return [];
-  }
   try {
     return await fetchApiRuns();
   } catch (err) {
@@ -34,5 +30,5 @@ export async function loadRuns(): Promise<RunRecord[]> {
 }
 
 export function currentModeLabel() {
-  return apiAvailable ? 'Backend API' : 'Mock in-browser run';
+  return apiAvailable ? 'Backend API' : 'Backend unavailable';
 }

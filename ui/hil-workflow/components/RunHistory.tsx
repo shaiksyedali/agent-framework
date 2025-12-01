@@ -14,7 +14,7 @@ export default function RunHistory({ runs }: Props) {
         <div className="tag">History</div>
       </div>
       <table className="table">
-        <caption>Latest executions (mocked)</caption>
+        <caption>Latest executions from backend</caption>
         <thead>
           <tr>
             <th>Workflow</th>

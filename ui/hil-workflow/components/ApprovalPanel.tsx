@@ -30,6 +30,12 @@ export default function ApprovalPanel({ pending, onApprove, onReject }: Props) {
         <div className="tag badge-warning">Awaiting decision</div>
       </div>
       <p style={{ color: 'var(--muted)' }}>{pending.message}</p>
+      {pending.detail && (
+        <div className="code" style={{ marginTop: '0.35rem' }}>
+          <div style={{ marginBottom: '0.35rem', color: 'var(--muted)' }}>Clarify before continuing:</div>
+          <pre className="code" style={{ margin: 0 }}>{JSON.stringify(pending.detail, null, 2)}</pre>
+        </div>
+      )}
       {detailPreview && <pre className="code">{detailPreview}</pre>}
       <div className="flex-row" style={{ marginTop: '0.75rem' }}>
         <button className="button primary" onClick={() => onApprove('Looks good')}>

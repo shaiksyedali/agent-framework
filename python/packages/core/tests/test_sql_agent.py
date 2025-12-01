@@ -105,6 +105,34 @@ async def test_sql_agent_calculator_fallback():
 
 
 @pytest.mark.asyncio
+async def test_sql_agent_preserves_attempt_details_for_replay(tmp_path):
+    """Ensure attempts capture failures and recovery details for UI replay."""
+
+    db_path = tmp_path / "retries.sqlite"
+    connection = sqlite3.connect(db_path)
+    connection.execute("CREATE TABLE items (id INTEGER, total INTEGER)")
+    connection.executemany("INSERT INTO items VALUES (?, ?)", [(1, 5), (2, 7)])
+    connection.commit()
+    connection.close()
+
+    llm_calls: list[str] = []
+
+    async def llm(_: str) -> str:
+        llm_calls.append("called")
+        return "SELECT missing FROM nowhere" if len(llm_calls) == 1 else "SELECT SUM(total) AS total FROM items"
+
+    connector = SQLiteConnector(database=str(db_path))
+    agent = SQLAgent(llm=llm)
+
+    result = await agent.generate_and_execute("Sum the totals", connector, max_attempts=2)
+
+    assert len(result.attempts) == 2
+    assert result.attempts[0].error is not None and "missing" in result.attempts[0].error
+    assert result.attempts[1].rows is not None and result.attempts[1].rows[0]["total"] == 12
+    assert result.sql and result.sql.lower().startswith("select sum")
+
+
+@pytest.mark.asyncio
 async def test_sql_agent_blocks_writes_when_disabled(tmp_path):
     db_path = tmp_path / "readonly.sqlite"
     connection = sqlite3.connect(db_path)

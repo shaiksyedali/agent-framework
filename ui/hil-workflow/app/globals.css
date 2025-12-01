@@ -1,0 +1,224 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0b1221;
+  --panel: #111a2e;
+  --border: #1d2740;
+  --accent: #4ade80;
+  --accent-strong: #22c55e;
+  --text: #e5e7eb;
+  --muted: #94a3b8;
+  --danger: #f87171;
+  --warning: #facc15;
+}
+
+body {
+  background: radial-gradient(circle at 20% 20%, rgba(34, 197, 94, 0.1), transparent 25%),
+    radial-gradient(circle at 80% 0%, rgba(56, 189, 248, 0.12), transparent 25%),
+    var(--bg);
+  color: var(--text);
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-strong);
+}
+
+.main-shell {
+  min-height: 100vh;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.grid-shell {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 1.25rem;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.card h2 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+}
+
+.input,
+.textarea,
+.select,
+.button {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #0c1528;
+  color: var(--text);
+  padding: 0.65rem 0.75rem;
+  box-sizing: border-box;
+}
+
+.input:focus,
+.textarea:focus,
+.select:focus {
+  outline: 2px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.button.primary {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #0b1221;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  border: none;
+}
+
+.button.secondary {
+  background: #0c1528;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.button.danger {
+  background: var(--danger);
+  color: #0b1221;
+  cursor: pointer;
+  border: none;
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.flex-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.badge-success {
+  color: var(--accent);
+}
+
+.badge-warning {
+  color: var(--warning);
+}
+
+.badge-danger {
+  color: var(--danger);
+}
+
+.section-title {
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.event-log {
+  background: #0c1528;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  max-height: 320px;
+  overflow: auto;
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.event-log strong {
+  color: var(--accent);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text);
+}
+
+.table th,
+.table td {
+  padding: 0.65rem 0.4rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 0.95rem;
+}
+
+.table th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.table caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: 0.5rem;
+}
+
+.timeline {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75rem;
+}
+
+.timeline-step {
+  margin-bottom: 0.5rem;
+  position: relative;
+  padding-left: 0.5rem;
+}
+
+.timeline-step::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  position: absolute;
+  left: -0.9rem;
+  top: 0.35rem;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.75rem;
+}
+
+.code {
+  background: #0c1528;
+  border-radius: 8px;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9rem;
+}

@@ -822,6 +822,7 @@ class MCPStdioTool(MCPTool):
         chat_client: "ChatClientProtocol | None" = None,
         additional_properties: dict[str, Any] | None = None,
         secret_store: SecretStore | None = None,
+        env_secret_key: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the MCP stdio tool.
@@ -854,6 +855,7 @@ class MCPStdioTool(MCPTool):
             encoding: The encoding to use for the command output.
             chat_client: The chat client to use for sampling.
             secret_store: Optional store for sensitive connection values.
+            env_secret_key: Optional key to use when storing env secrets.
             kwargs: Any extra arguments to pass to the stdio client.
         """
         super().__init__(
@@ -871,10 +873,14 @@ class MCPStdioTool(MCPTool):
         )
         self.command = command
         self.args = args or []
-        self._env_secret_key = f"{self._secret_prefix}/env"
+        self._env_secret_key = env_secret_key or f"{self._secret_prefix}/env"
         if env:
             self._secret_store.set_secret(self._env_secret_key, json.dumps(env))
-        self.env_description = self._secret_store.describe(self._env_secret_key) if env else None
+        self.env_description = (
+            self._secret_store.describe(self._env_secret_key)
+            if env or env_secret_key
+            else None
+        )
         self.env = self.env_description
         self.encoding = encoding
         self._client_kwargs = kwargs
@@ -943,6 +949,8 @@ class MCPStreamableHTTPTool(MCPTool):
         chat_client: "ChatClientProtocol | None" = None,
         additional_properties: dict[str, Any] | None = None,
         secret_store: SecretStore | None = None,
+        url_secret_key: str | None = None,
+        headers_secret_key: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the MCP streamable HTTP tool.
@@ -977,6 +985,8 @@ class MCPStreamableHTTPTool(MCPTool):
             terminate_on_close: Close the transport when the MCP client is terminated.
             chat_client: The chat client to use for sampling.
             secret_store: Optional store for sensitive connection values.
+            url_secret_key: Optional key to use when storing the MCP URL.
+            headers_secret_key: Optional key to use when storing HTTP headers.
             kwargs: Any extra arguments to pass to the SSE client.
         """
         super().__init__(
@@ -992,13 +1002,17 @@ class MCPStreamableHTTPTool(MCPTool):
             request_timeout=request_timeout,
             secret_store=secret_store,
         )
-        self._url_secret_key = f"{self._secret_prefix}/http/url"
-        self._headers_secret_key = f"{self._secret_prefix}/http/headers"
+        self._url_secret_key = url_secret_key or f"{self._secret_prefix}/http/url"
+        self._headers_secret_key = headers_secret_key or f"{self._secret_prefix}/http/headers"
         self._secret_store.set_secret(self._url_secret_key, url)
         if headers:
             self._secret_store.set_secret(self._headers_secret_key, json.dumps(headers))
         self.url_description = self._secret_store.describe(self._url_secret_key)
-        self.headers_description = self._secret_store.describe(self._headers_secret_key) if headers else None
+        self.headers_description = (
+            self._secret_store.describe(self._headers_secret_key)
+            if headers or headers_secret_key
+            else None
+        )
         self.url = self.url_description
         self.headers = self.headers_description
         self.timeout = timeout
@@ -1070,6 +1084,7 @@ class MCPWebsocketTool(MCPTool):
         chat_client: "ChatClientProtocol | None" = None,
         additional_properties: dict[str, Any] | None = None,
         secret_store: SecretStore | None = None,
+        url_secret_key: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the MCP WebSocket tool.
@@ -1100,6 +1115,7 @@ class MCPWebsocketTool(MCPTool):
             additional_properties: Additional properties.
             chat_client: The chat client to use for sampling.
             secret_store: Optional store for sensitive connection values.
+            url_secret_key: Optional key to use when storing the MCP URL.
             kwargs: Any extra arguments to pass to the WebSocket client.
         """
         super().__init__(
@@ -1115,7 +1131,7 @@ class MCPWebsocketTool(MCPTool):
             request_timeout=request_timeout,
             secret_store=secret_store,
         )
-        self._url_secret_key = f"{self._secret_prefix}/websocket/url"
+        self._url_secret_key = url_secret_key or f"{self._secret_prefix}/websocket/url"
         self._secret_store.set_secret(self._url_secret_key, url)
         self.url_description = self._secret_store.describe(self._url_secret_key)
         self.url = self.url_description

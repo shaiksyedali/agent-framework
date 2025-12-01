@@ -40,3 +40,8 @@ The server exposes:
 - `POST /runs/{run_id}/approve` or `/reject` to respond to approvals
 
 Events use the same shape as `ui/hil-workflow/lib/types.ts` so the UI can render plan/SQL/RAG/reasoning/response updates with HIL pauses.
+
+The server now persists workflows, runs, events, and approval decisions to `python/samples/demos/hil_workflow/data/hil_api.db` so you can:
+- Restart the server and replay past events in the UI
+- Keep a run history without relying on in-memory state
+- Stream live updates after the historical replay

@@ -1,7 +1,7 @@
 # Current change status
 
 ## Working tree
-- Pending changes extend the HIL demo with Azure OpenAI-backed chat + embeddings (with local fallback), plus the FastAPI backend and Next.js streaming wiring.
+- Pending changes add durable SQLite-backed workflow/run/event storage for the HIL FastAPI demo, wire approvals + orchestration through the runner, and refresh the UI to load persisted run history.
 
 ## Most recent commit
 - Commit: `2d3a539ef74b706667786126f1f19bf180087d94` ("Add HIL workflow scaffolding and roadmap").

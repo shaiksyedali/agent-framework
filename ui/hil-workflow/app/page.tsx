@@ -1,12 +1,12 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ApprovalPanel from '../components/ApprovalPanel';
 import EventStream from '../components/EventStream';
 import ExecutionConsole from '../components/ExecutionConsole';
 import RunHistory from '../components/RunHistory';
 import WorkflowBuilder from '../components/WorkflowBuilder';
-import { currentModeLabel, startRun, type RunHandle } from '../lib/runClient';
+import { currentModeLabel, loadRuns, startRun, type RunHandle } from '../lib/runClient';
 import type { EventEnvelope, RunRecord, WorkflowDefinition } from '../lib/types';
 
 const defaultDefinition: WorkflowDefinition = {
@@ -27,6 +27,14 @@ export default function Page() {
   const unsubscribeRef = useRef<(() => void) | null>(null);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadRuns()
+      .then(history => setRuns(history))
+      .catch(err => {
+        console.error('Failed to load run history', err);
+      });
+  }, []);
 
   const running = useMemo(
     () => runs.some(run => run.status === 'running' || run.status === 'awaiting-approval'),

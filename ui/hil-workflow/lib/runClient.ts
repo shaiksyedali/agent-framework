@@ -1,4 +1,4 @@
-import { startApiRun, apiAvailable } from './apiClient';
+import { fetchApiRuns, startApiRun, apiAvailable } from './apiClient';
 import { startMockRun } from './mockClient';
 import type { EventEnvelope, RunRecord, WorkflowDefinition } from './types';
 
@@ -19,6 +19,18 @@ export async function startRun(definition: WorkflowDefinition): Promise<RunHandl
     }
   }
   return startMockRun(definition);
+}
+
+export async function loadRuns(): Promise<RunRecord[]> {
+  if (!apiAvailable) {
+    return [];
+  }
+  try {
+    return await fetchApiRuns();
+  } catch (err) {
+    console.error('Failed to load runs from API, returning empty history', err);
+    return [];
+  }
 }
 
 export function currentModeLabel() {

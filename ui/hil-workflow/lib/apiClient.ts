@@ -67,3 +67,15 @@ export async function startApiRun(definition: WorkflowDefinition): Promise<RunHa
     stop: () => eventSource?.close()
   };
 }
+
+export async function fetchApiRuns(): Promise<RunRecord[]> {
+  if (!baseUrl) {
+    return [];
+  }
+  const res = await fetch(`${baseUrl}/runs`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch runs (${res.status})`);
+  }
+  const body = (await res.json()) as { items: RunRecord[] };
+  return body.items;
+}

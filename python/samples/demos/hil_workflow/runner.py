@@ -29,25 +29,33 @@ PII_PATTERN = re.compile(r"([\w\.]+@[\w\.]+|\+?\d{10,})")
 
 @dataclass
 class ApprovalState:
-    queue: asyncio.Queue[str]
+    queue: asyncio.Queue[dict]
 
 
 class RunBus:
     """In-memory event broadcast queues keyed by run id."""
 
     def __init__(self):
-        self._queues: dict[str, asyncio.Queue[StoredEvent | None]] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._queues: dict[str, list[asyncio.Queue[StoredEvent | None]]] = {}
 
-    def get_queue(self, run_id: str) -> asyncio.Queue[StoredEvent | None]:
-        if run_id not in self._queues:
-            self._queues[run_id] = asyncio.Queue()
-        return self._queues[run_id]
+    def subscribe(self, run_id: str) -> asyncio.Queue[StoredEvent | None]:
+        queue: asyncio.Queue[StoredEvent | None] = asyncio.Queue()
+        self._queues.setdefault(run_id, []).append(queue)
+        return queue
 
-    def lock_for(self, run_id: str) -> asyncio.Lock:
-        if run_id not in self._locks:
-            self._locks[run_id] = asyncio.Lock()
-        return self._locks[run_id]
+    def unsubscribe(self, run_id: str, queue: asyncio.Queue[StoredEvent | None]) -> None:
+        queues = self._queues.get(run_id)
+        if not queues:
+            return
+        try:
+            queues.remove(queue)
+        except ValueError:
+            return
+
+    async def broadcast(self, run_id: str, event: StoredEvent | None) -> None:
+        queues = self._queues.get(run_id, [])
+        for queue in list(queues):
+            await queue.put(event)
 
 
 class Runner:
@@ -114,8 +122,7 @@ class Runner:
 
     async def _publish(self, run_id: str, event: StoredEvent) -> None:
         self.store.insert_event(event)
-        queue = self.bus.get_queue(run_id)
-        await queue.put(event)
+        await self.bus.broadcast(run_id, event)
 
     async def _emit(self, run_id: str, type_: str, message: str, detail: Optional[dict] = None) -> None:
         safe_message = self._redact(message)
@@ -139,10 +146,14 @@ class Runner:
         if run_id not in self.approvals:
             self.approvals[run_id] = ApprovalState(queue=asyncio.Queue())
         await self._emit(run_id, "approval-request", "Approval required", detail)
+        self._record_artifact(run_id, "approval-request", detail or {})
         decision = await self.approvals[run_id].queue.get()
-        await self._emit(run_id, "approval-decision", f"Decision: {decision}")
-        self.store.record_decision(run_id, decision, reason=None)
-        return decision == "approved"
+        decision_value = decision.get("decision", "rejected")
+        reason = decision.get("reason")
+        await self._emit(run_id, "approval-decision", f"Decision: {decision_value}", {"reason": reason})
+        self._record_artifact(run_id, "approval-decision", {"decision": decision_value, "reason": reason})
+        self.store.record_decision(run_id, decision_value, reason)
+        return decision_value == "approved"
 
     async def _sql_probe(self, run_id: str, connector: SQLConnector, goal: str) -> bool:
         tables = []
@@ -160,7 +171,8 @@ class Runner:
         for attempt in range(1, 4):
             try:
                 preview_rows = connector.preview(target_table, limit=5)
-                detail = {"table": target_table, "rows": preview_rows, "attempt": attempt, "goal": goal}
+                query = f"SELECT * FROM {target_table} LIMIT 5"
+                detail = {"table": target_table, "rows": preview_rows, "attempt": attempt, "goal": goal, "query": query}
                 self._record_artifact(run_id, "sql-preview", detail)
                 await self._emit(run_id, "sql", f"SQL attempt {attempt} succeeded", detail)
                 return True
@@ -218,7 +230,7 @@ class Runner:
         if not await self._approval_gate(run_id, {"requestedBy": "Planner"}):
             await self._emit(run_id, "status", "Run rejected", {"status": "failed"})
             self.store.update_run_status(run_id, "failed")
-            await self.bus.get_queue(run_id).put(None)
+            await self.bus.broadcast(run_id, None)
             return
 
         # Run the workflow; convert internal events to coarse-grained UI envelope
@@ -229,6 +241,8 @@ class Runner:
                     detail = payload.get("data", {})
                     agent_name = detail.get("agent_name") or payload.get("source_id")
                     await self._emit(run_id, "status", f"{agent_name} completed", {"status": "running"})
+                if payload.get("messages") or (payload.get("data") and payload["data"].get("message")):
+                    self._record_artifact(run_id, "chat-history", payload)
 
             # Run an explicit SQL + RAG probe for deterministic observability
             sql_ok = await self._sql_probe(run_id, connector, wf.definition.get("goals", "Execute workflow"))
@@ -247,14 +261,14 @@ class Runner:
             await self._emit(run_id, "status", f"Run failed: {exc}", {"status": "failed"})
             self.store.update_run_status(run_id, "failed")
         finally:
-            await self.bus.get_queue(run_id).put(None)
+            await self.bus.broadcast(run_id, None)
 
     async def _fallback_simulation(self, run_id: str, wf: StoredWorkflow) -> None:
         await self._emit(run_id, "plan", "Planner drafted workflow steps", {"steps": wf.definition.get("steps", [])})
         if not await self._approval_gate(run_id, {"requestedBy": "Planner"}):
             await self._emit(run_id, "status", "Run rejected", {"status": "failed"})
             self.store.update_run_status(run_id, "failed")
-            await self.bus.get_queue(run_id).put(None)
+            await self.bus.broadcast(run_id, None)
             return
 
         await self._emit(
@@ -278,32 +292,35 @@ class Runner:
         self._record_artifact(run_id, "response", {"status": "succeeded"})
         await self._emit(run_id, "status", "Run complete", {"status": "succeeded"})
         self.store.update_run_status(run_id, "succeeded")
-        await self.bus.get_queue(run_id).put(None)
+        await self.bus.broadcast(run_id, None)
 
     async def start_run(self, run: StoredRun, wf: StoredWorkflow) -> None:
         await self._emit(run.id, "status", "Run started", {"status": "running"})
         await self._simulate_with_orchestrator(run.id, wf)
 
-    async def stream_events(self, run_id: str) -> AsyncIterator[StoredEvent | None]:
+    async def stream_events(self, run_id: str, since: str | None = None) -> AsyncIterator[StoredEvent | None]:
         # Replay history first
-        for evt in self.store.list_events(run_id):
+        for evt in self.store.list_events_since(run_id, after_event_id=since):
             yield evt
         # Then stream new events
-        queue = self.bus.get_queue(run_id)
-        while True:
-            evt = await queue.get()
-            yield evt
-            if evt is None:
-                break
+        queue = self.bus.subscribe(run_id)
+        try:
+            while True:
+                evt = await queue.get()
+                yield evt
+                if evt is None:
+                    break
+        finally:
+            self.bus.unsubscribe(run_id, queue)
 
     def approve(self, run_id: str, reason: Optional[str] = None) -> None:
         if run_id not in self.approvals:
             self.approvals[run_id] = ApprovalState(queue=asyncio.Queue())
-        self.approvals[run_id].queue.put_nowait("approved")
+        self.approvals[run_id].queue.put_nowait({"decision": "approved", "reason": reason})
         self.store.record_decision(run_id, "approved", reason)
 
     def reject(self, run_id: str, reason: Optional[str] = None) -> None:
         if run_id not in self.approvals:
             self.approvals[run_id] = ApprovalState(queue=asyncio.Queue())
-        self.approvals[run_id].queue.put_nowait("rejected")
+        self.approvals[run_id].queue.put_nowait({"decision": "rejected", "reason": reason})
         self.store.record_decision(run_id, "rejected", reason)

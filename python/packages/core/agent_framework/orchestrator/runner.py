@@ -275,7 +275,7 @@ class Orchestrator:
 
     @staticmethod
     def _derive_policy_tags(step: StepDefinition) -> set[str]:
-        tags: set[str] = set()
+        tags: set[str] = set(step.metadata.get("policy_tags", set()))
         if step.approval_type == ApprovalType.SQL:
             tags.add("ddl_dml")
         if step.approval_type == ApprovalType.MCP:

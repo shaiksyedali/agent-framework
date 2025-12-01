@@ -112,6 +112,9 @@ class SQLAgent:
         fetch_raw_after_aggregation: bool = True,
         enable_calculator_fallback: bool = True,
         allow_writes: bool | None = None,
+        row_limit: int | None = None,
+        redaction_hook: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
+        verify_numeric_results: bool = True,
     ) -> SQLExecutionResult:
         """Generate SQL for a goal, run it, and retry on errors or invalid answers."""
 
@@ -120,6 +123,7 @@ class SQLAgent:
         allow_writes = allow_writes if allow_writes is not None else getattr(
             connector.approval_policy, "allow_writes", True
         )
+        enforced_row_limit = row_limit if row_limit is not None else connector.approval_policy.row_limit
         schema_text = schema or connector.get_schema()
         examples: list[SQLExample] = list(self._few_shot_examples)
         if history:
@@ -163,6 +167,13 @@ class SQLAgent:
 
             try:
                 rows = connector.run_query(candidate_sql)
+                rows = connector.approval_policy.apply_row_limit(rows)
+                if enforced_row_limit and enforced_row_limit > 0:
+                    rows = rows[:enforced_row_limit]
+                if redaction_hook:
+                    rows = redaction_hook(rows)
+                if verify_numeric_results:
+                    self._verify_numeric_rows(rows)
             except DataConnectorError as exc:
                 feedback = f"Error executing SQL: {exc}"
                 attempts.append(SQLAttempt(sql=candidate_sql, rows=None, raw_rows=None, error=str(exc), feedback=feedback))
@@ -179,6 +190,11 @@ class SQLAgent:
                 if raw_query:
                     try:
                         raw_rows = connector.run_query(raw_query)
+                        raw_rows = connector.approval_policy.apply_row_limit(raw_rows)
+                        if enforced_row_limit and enforced_row_limit > 0:
+                            raw_rows = raw_rows[:enforced_row_limit]
+                        if redaction_hook:
+                            raw_rows = redaction_hook(raw_rows)
                     except DataConnectorError:  # pragma: no cover - fallback
                         raw_rows = None
 
@@ -268,6 +284,22 @@ class SQLAgent:
         if not all(isinstance(n, allowed_nodes) or isinstance(n, ast.Load) for n in ast.walk(node)):
             raise ValueError("Unsafe expression")
         return _eval(node)
+
+    @staticmethod
+    def _verify_numeric_rows(rows: list[dict[str, Any]]) -> None:
+        if not rows:
+            return
+        first_row = rows[0]
+        if len(first_row) != 1:
+            return
+        value = next(iter(first_row.values()))
+        if isinstance(value, (int, float)):
+            return
+        if isinstance(value, str):
+            try:
+                SQLAgent._evaluate_math_expression(value)
+            except ValueError as exc:  # pragma: no cover - validation guardrail
+                raise DataConnectorError(f"Numeric verification failed: {exc}") from exc
 
 
 __all__ = [

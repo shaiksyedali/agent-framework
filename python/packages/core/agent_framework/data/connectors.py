@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
 from agent_framework.orchestrator.approvals import ApprovalType
+from agent_framework.security.secrets import SecretStore
 
 
 class DataConnectorError(RuntimeError):
@@ -21,6 +22,7 @@ class SQLApprovalPolicy:
     approval_required: bool = True
     allow_writes: bool = True
     preview_limit: int = 120
+    row_limit: int = 500
     summary_prefix: str = "Execute SQL query"
     engine: str = "generic"
     risky_statements: tuple[str, ...] = (
@@ -53,6 +55,13 @@ class SQLApprovalPolicy:
         if len(normalized) > self.preview_limit:
             normalized = f"{normalized[: self.preview_limit - 3]}..."
         return f"{self.summary_prefix} ({self.engine}): {normalized}" if normalized else self.summary_prefix
+
+    def apply_row_limit(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Clamp returned rows to the configured limit."""
+
+        if self.row_limit <= 0:
+            return rows
+        return rows[: self.row_limit]
 
 
 class SQLConnector:
@@ -168,12 +177,17 @@ class PostgresConnector(SQLConnector):
         connection_factory: Callable[[], Any] | None = None,
         *,
         connection_string: str | None = None,
+        connection_secret_key: str | None = None,
+        secret_store: SecretStore | None = None,
         approval_policy: SQLApprovalPolicy | None = None,
     ) -> None:
         super().__init__(approval_policy=approval_policy)
         self.approval_policy.engine = self.approval_policy.engine or "postgres"
         self._connection_factory = connection_factory
-        self._connection_string = connection_string
+        self._secret_store = secret_store or SecretStore.global_store()
+        self._connection_secret_key = connection_secret_key or "postgres_connection"
+        if connection_string:
+            self._secret_store.set_secret(self._connection_secret_key, connection_string)
 
     def _open_connection(self):
         try:
@@ -190,9 +204,10 @@ class PostgresConnector(SQLConnector):
             raise DataConnectorError(
                 "psycopg is required to use PostgresConnector. Install with `pip install psycopg[binary]`."
             ) from exc
-        if not self._connection_string:
+        connection_string = self._secret_store.get_secret(self._connection_secret_key)
+        if not connection_string:
             raise DataConnectorError("connection_string is required when no connection_factory is provided")
-        return psycopg.connect(self._connection_string)
+        return psycopg.connect(connection_string)
 
     def get_schema(self) -> str:
         connection = self._open_connection()

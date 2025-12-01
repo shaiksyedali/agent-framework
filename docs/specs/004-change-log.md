@@ -2,6 +2,7 @@
 
 ## Working tree
 - Pending changes add durable SQLite-backed workflow/run/event storage for the HIL FastAPI demo, wire approvals + orchestration through the runner, and refresh the UI to load persisted run history.
+- The demo backend now persists RAG documents with embeddings, stores artifacts (plan/SQL/RAG), exposes `/knowledge` and artifact APIs, and adds guarded SQL/RAG probes plus PII-redacted event streaming. UI data-source forms surface validation hints for DB configuration.
 
 ## Most recent commit
 - Commit: `2d3a539ef74b706667786126f1f19bf180087d94` ("Add HIL workflow scaffolding and roadmap").

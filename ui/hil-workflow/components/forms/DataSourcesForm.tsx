@@ -15,6 +15,12 @@ const engines: Array<{ value: SqlEngine; label: string }> = [
 
 export default function DataSourcesForm({ knowledge, onChange }: Props) {
   const update = (partial: Partial<KnowledgeSources>) => onChange({ ...knowledge, ...partial });
+  const engine = knowledge.database?.engine ?? 'sqlite';
+  const dbValue = knowledge.database?.path ?? knowledge.database?.connectionString ?? '';
+  const showDbWarning =
+    engine === 'postgres'
+      ? !dbValue || !dbValue.includes('://')
+      : engine !== 'postgres' && !dbValue;
 
   return (
     <div style={{ marginTop: '1rem' }}>
@@ -35,7 +41,7 @@ export default function DataSourcesForm({ knowledge, onChange }: Props) {
           <select
             className="select"
             style={{ marginTop: '0.5rem' }}
-            value={knowledge.database?.engine ?? 'sqlite'}
+            value={engine}
             onChange={e => update({ database: { ...knowledge.database, engine: e.target.value as SqlEngine } })}
           >
             {engines.map(engine => (
@@ -48,7 +54,7 @@ export default function DataSourcesForm({ knowledge, onChange }: Props) {
             className="input"
             style={{ marginTop: '0.5rem' }}
             placeholder="File path (sqlite/duckdb) or connection string (postgres)"
-            value={knowledge.database?.path ?? knowledge.database?.connectionString ?? ''}
+            value={dbValue}
             onChange={e => {
               const value = e.target.value;
               const isConnection = value.includes('://');
@@ -61,6 +67,13 @@ export default function DataSourcesForm({ knowledge, onChange }: Props) {
               });
             }}
           />
+          {showDbWarning && (
+            <p className="muted" style={{ marginTop: '0.25rem' }}>
+              {engine === 'postgres'
+                ? 'Enter a full postgres connection string (e.g., postgres://user:pass@host:5432/dbname).'
+                : 'Provide a file path for sqlite/duckdb so the workflow can introspect tables.'}
+            </p>
+          )}
         </div>
         <div className="card" style={{ padding: '0.75rem 1rem' }}>
           <div className="section-title">MCP server</div>

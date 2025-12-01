@@ -35,8 +35,11 @@ uvicorn server:app --reload --host 0.0.0.0 --port 8000
 
 The server exposes:
 - `POST /workflows` to register a workflow definition
+- `GET  /workflows/{workflow_id}` to fetch a stored definition and document count
+- `POST /knowledge` to ingest arbitrary documents for a workflow (stored with embeddings)
 - `POST /runs` to start a run for a workflow
 - `GET  /runs/{run_id}/events` to stream events via `text/event-stream`
+- `GET  /runs/{run_id}/artifacts` to fetch persisted plan/SQL/RAG artifacts for observability
 - `POST /runs/{run_id}/approve` or `/reject` to respond to approvals
 
 Events use the same shape as `ui/hil-workflow/lib/types.ts` so the UI can render plan/SQL/RAG/reasoning/response updates with HIL pauses.
@@ -45,3 +48,5 @@ The server now persists workflows, runs, events, and approval decisions to `pyth
 - Restart the server and replay past events in the UI
 - Keep a run history without relying on in-memory state
 - Stream live updates after the historical replay
+
+It also stores RAG documents (with embeddings), plan/SQL/RAG artifacts, and approval decisions so you can reconnect the UI and still see contextual detail for a completed run.

@@ -68,6 +68,14 @@ class SQLConnector:
     def tools(self) -> Sequence[Callable]:
         raise NotImplementedError
 
+    def list_tables(self) -> List[str]:
+        """Return available tables for proactive validation."""
+        raise NotImplementedError
+
+    def preview(self, table: str, limit: int = 5) -> List[tuple]:
+        """Return a small sample of rows for observability."""
+        raise NotImplementedError
+
     @staticmethod
     def _guard_writes(sql: str, allow_writes: bool) -> None:
         if allow_writes:
@@ -105,6 +113,13 @@ class DuckDBConnector(SQLConnector):
 
         return [duckdb_get_schema, run_duckdb_query]
 
+    def list_tables(self) -> List[str]:
+        rows = self._conn.execute("SHOW TABLES").fetchall()
+        return [row[0] for row in rows]
+
+    def preview(self, table: str, limit: int = 5) -> List[tuple]:
+        return self._conn.execute(f"SELECT * FROM {table} LIMIT {limit}").fetchall()
+
 
 class SQLiteConnector(SQLConnector):
     """SQLite connector with schema + query tools."""
@@ -138,6 +153,14 @@ class SQLiteConnector(SQLConnector):
             return "\n".join(table_rows)
 
         return [sqlite_get_schema, run_sqlite_query]
+
+    def list_tables(self) -> List[str]:
+        cur = self._conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        return [row[0] for row in cur.fetchall()]
+
+    def preview(self, table: str, limit: int = 5) -> List[tuple]:
+        cur = self._conn.execute(f"SELECT * FROM {table} LIMIT {limit}")
+        return cur.fetchall()
 
 
 class PostgresConnector(SQLConnector):
@@ -189,6 +212,21 @@ class PostgresConnector(SQLConnector):
 
         return [postgres_get_schema, run_postgres_query]
 
+    def list_tables(self) -> List[str]:
+        sql = "SELECT table_name FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema')"
+        rows = self._fetch(sql)
+        if not rows:
+            return []
+        _, *body = rows
+        return [row[0] for row in body]
+
+    def preview(self, table: str, limit: int = 5) -> List[tuple]:
+        rows = self._fetch(f"SELECT * FROM {table} LIMIT {limit}")
+        if not rows:
+            return []
+        header, *body = rows
+        return [tuple(header)] + body
+
 
 class LocalRetriever:
     """Toy retriever that returns cited snippets for RAG grounding."""
@@ -216,6 +254,7 @@ class AzureEmbeddingRetriever:
     def __init__(
         self,
         documents: Optional[List[str]] = None,
+        precomputed_embeddings: Optional[List[List[float]]] = None,
         top_k: int = 4,
         *,
         embed_deployment: Optional[str] = None,
@@ -242,7 +281,10 @@ class AzureEmbeddingRetriever:
             azure_endpoint=self.endpoint,
             api_version=self.api_version,
         )
-        self._index = [(doc, self._embed(doc)) for doc in self.documents]
+        if precomputed_embeddings:
+            self._index = list(zip(self.documents, precomputed_embeddings))
+        else:
+            self._index = [(doc, self._embed(doc)) for doc in self.documents]
 
     def _embed(self, text: str) -> List[float]:
         response = self._client.embeddings.create(model=self.embed_deployment, input=[text])

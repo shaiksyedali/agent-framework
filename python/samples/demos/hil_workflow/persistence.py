@@ -46,6 +46,25 @@ class StoredEvent:
     timestamp: str
 
 
+@dataclass
+class StoredDocument:
+    id: str
+    workflow_id: str
+    content: str
+    embedding: List[float]
+    metadata: Dict[str, Any]
+    created_at: str
+
+
+@dataclass
+class StoredArtifact:
+    id: str
+    run_id: str
+    kind: str
+    payload: Dict[str, Any]
+    created_at: str
+
+
 class Store:
     """Simple SQLite wrapper with minimal locking for demo purposes."""
 
@@ -102,6 +121,29 @@ class Store:
             );
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS documents (
+                id TEXT PRIMARY KEY,
+                workflow_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                embedding TEXT NOT NULL,
+                metadata TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS artifacts (
+                id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
         self._conn.commit()
 
     def create_workflow(self, workflow_id: str, definition: Dict[str, Any]) -> None:
@@ -139,7 +181,9 @@ class Store:
 
     def list_runs(self) -> List[StoredRun]:
         cur = self._conn.cursor()
-        rows = cur.execute("SELECT id, workflow_id, workflow_name, started_at, status, engine FROM runs ORDER BY started_at DESC").fetchall()
+        rows = cur.execute(
+            "SELECT id, workflow_id, workflow_name, started_at, status, engine FROM runs ORDER BY started_at DESC"
+        ).fetchall()
         return [StoredRun(*row) for row in rows]
 
     def insert_event(self, event: StoredEvent) -> None:
@@ -166,4 +210,74 @@ class Store:
             (approval_id, run_id, decision, reason, _utc_now()),
         )
         self._conn.commit()
+
+    def upsert_document(
+        self,
+        *,
+        document_id: str,
+        workflow_id: str,
+        content: str,
+        embedding: List[float],
+        metadata: Dict[str, Any] | None = None,
+    ) -> None:
+        cur = self._conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO documents (id, workflow_id, content, embedding, metadata, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET content = excluded.content, embedding = excluded.embedding, metadata = excluded.metadata
+            """,
+            (
+                document_id,
+                workflow_id,
+                content,
+                json.dumps(embedding),
+                json.dumps(metadata or {}),
+                _utc_now(),
+            ),
+        )
+        self._conn.commit()
+
+    def list_documents(self, workflow_id: str) -> List[StoredDocument]:
+        cur = self._conn.cursor()
+        rows = cur.execute(
+            "SELECT id, workflow_id, content, embedding, metadata, created_at FROM documents WHERE workflow_id = ?",
+            (workflow_id,),
+        ).fetchall()
+        docs: List[StoredDocument] = []
+        for row in rows:
+            docs.append(
+                StoredDocument(
+                    id=row[0],
+                    workflow_id=row[1],
+                    content=row[2],
+                    embedding=json.loads(row[3]),
+                    metadata=json.loads(row[4]),
+                    created_at=row[5],
+                )
+            )
+        return docs
+
+    def record_artifact(self, run_id: str, kind: str, payload: Dict[str, Any]) -> str:
+        artifact_id = f"art_{run_id}_{int(datetime.now().timestamp()*1000)}"
+        cur = self._conn.cursor()
+        cur.execute(
+            "INSERT INTO artifacts (id, run_id, kind, payload, created_at) VALUES (?, ?, ?, ?, ?)",
+            (artifact_id, run_id, kind, json.dumps(payload), _utc_now()),
+        )
+        self._conn.commit()
+        return artifact_id
+
+    def list_artifacts(self, run_id: str) -> List[StoredArtifact]:
+        cur = self._conn.cursor()
+        rows = cur.execute(
+            "SELECT id, run_id, kind, payload, created_at FROM artifacts WHERE run_id = ? ORDER BY created_at ASC",
+            (run_id,),
+        ).fetchall()
+        artifacts: List[StoredArtifact] = []
+        for row in rows:
+            artifacts.append(
+                StoredArtifact(id=row[0], run_id=row[1], kind=row[2], payload=json.loads(row[3]), created_at=row[4])
+            )
+        return artifacts
 

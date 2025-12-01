@@ -79,3 +79,17 @@ export async function fetchApiRuns(): Promise<RunRecord[]> {
   const body = (await res.json()) as { items: RunRecord[] };
   return body.items;
 }
+
+export async function fetchApiArtifacts(runId: string) {
+  if (!baseUrl) return { items: [] };
+  const res = await fetch(`${baseUrl}/runs/${runId}/artifacts`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch artifacts (${res.status})`);
+  }
+  return (await res.json()) as { items: unknown[] };
+}
+
+export async function ingestKnowledge(workflowId: string, documents: Array<{ id?: string; text: string; metadata?: object }>) {
+  if (!baseUrl) return { ingested: 0 };
+  return postJSON<{ ingested: number }>(`/knowledge`, { workflowId, documents });
+}

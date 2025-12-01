@@ -24,12 +24,14 @@ purpose: Gap analysis and next steps to make the HIL agentic framework productio
    - Implement run creation endpoints that pick engine-specific connectors, construct `HilOrchestrator`, and stream events over SSE/WS; add approval endpoints that unblock paused steps.
    - Persist run state, artifacts (plan drafts, SQL text/results, RAG snippets), and chat history for follow-up questions.
 
-   **Progress:** Added a lightweight FastAPI sample (`python/samples/demos/hil_workflow/server.py`) that exposes `/workflows`, `/runs`, `/runs/{id}/events`, and approval endpoints with the same event envelope as the UI. It is in-memory and synthetic but demonstrates the contract the UI consumes via `NEXT_PUBLIC_HIL_API_BASE`.
+   **Progress:** Added a FastAPI sample (`python/samples/demos/hil_workflow/server.py`) that persists workflows, runs, events, approvals, artifacts, and ingested RAG documents to SQLite. It exposes `/workflows`, `/knowledge`, `/runs`, `/runs/{id}/events`, `/runs/{id}/artifacts`, and approval endpoints with the same event envelope the UI consumes via `NEXT_PUBLIC_HIL_API_BASE`.
 
 2) **Finish data connectors and grounding**  
-   - Wire vector store ingestion (chunking, embedding, metadata) and retrieval tools that emit cited snippets.  
-   - Implement the SQL few-shot retrieval/evaluation loop using prior successful queries and schema metadata; add aggregation-aware raw-row fetches.  
+   - Wire vector store ingestion (chunking, embedding, metadata) and retrieval tools that emit cited snippets.
+   - Implement the SQL few-shot retrieval/evaluation loop using prior successful queries and schema metadata; add aggregation-aware raw-row fetches.
    - Register MCP tools from UI inputs with approval policies; validate Postgres DSNs and allow optional write operations via approvals.
+
+   **Progress:** Added Azure-backed embedding ingestion with deterministic hash fallback (`python/samples/demos/hil_workflow/knowledge.py`), persisted embeddings/documents, and deterministic SQL/RAG probes with retries plus PII-redacted streaming. UI forms now validate basic DB inputs.
 
 3) **Strengthen safety and governance**  
    - Centralize approval policy enforcement (DDL/DML, MCP actions) with audit logs; integrate secrets storage for DB/MCP credentials.  

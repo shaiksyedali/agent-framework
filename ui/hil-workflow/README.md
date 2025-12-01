@@ -7,7 +7,8 @@ A Next.js UI for configuring and monitoring human-in-the-loop (HIL) agentic work
 - Step composer with recommended agent chain (Planner → SQL → RAG → Reasoner → Responder) plus custom steps.
 - Live execution console that streams orchestrator events, approvals, and status updates.
 - Approval panel to accept/reject planner/SQL actions, with mock artifacts for visibility.
-- Recent run history table to showcase status across engines.
+- Recent run history table to showcase status across engines and replay artifacts from the backend.
+- Data-source form hints for valid SQLite/DuckDB paths vs Postgres connection strings.
 
 ## Running locally (UI only)
 ```bash
@@ -32,7 +33,7 @@ cd ui/hil-workflow
 NEXT_PUBLIC_HIL_API_BASE=http://localhost:8000 npm run dev
 ```
 
-- `lib/apiClient.ts` calls the backend to create workflows/runs and streams events via `text/event-stream`.
+- `lib/apiClient.ts` calls the backend to create workflows/runs, ingest knowledge docs, list artifacts, and streams events via `text/event-stream`.
 - `lib/runClient.ts` automatically falls back to the mock client if the API is unreachable.
 - Approval actions call `/runs/{id}/approve` or `/reject`, matching the backend envelope in `python/samples/demos/hil_workflow/server.py`.
 

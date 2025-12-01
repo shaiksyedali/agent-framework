@@ -19,7 +19,7 @@ from mcp.client.websocket import websocket_client
 from mcp.shared.context import RequestContext
 from mcp.shared.exceptions import McpError
 from mcp.shared.session import RequestResponder
-from pydantic import BaseModel, Field, create_model
+from pydantic import BaseModel, Field, SecretStr, create_model
 
 from ._tools import AIFunction, HostedMCPSpecificApproval
 from ._types import ChatMessage, Contents, DataContent, Role, TextContent, UriContent
@@ -48,6 +48,36 @@ LOG_LEVEL_MAPPING: dict[types.LoggingLevel, int] = {
     "alert": logging.CRITICAL,
     "emergency": logging.CRITICAL,
 }
+
+
+def _serialize_secret_value(value: Any) -> str:
+    """Serialize a secret value for storage.
+
+    Preserves simple type information so values can be reconstructed when
+    retrieved from a :class:`SecretStore`.
+    """
+
+    try:
+        return json.dumps({"type": type(value).__name__, "value": value})
+    except TypeError:
+        return json.dumps({"type": "str", "value": str(value)})
+
+
+def _deserialize_secret_value(secret: str) -> Any:
+    """Deserialize a secret value previously stored via `_serialize_secret_value`."""
+
+    try:
+        loaded = json.loads(secret)
+    except json.JSONDecodeError:
+        return secret
+
+    if isinstance(loaded, dict) and "type" in loaded and "value" in loaded:
+        value = loaded["value"]
+        if loaded["type"] == "tuple" and isinstance(value, list):
+            return tuple(value)
+        return value
+
+    return loaded
 
 __all__ = [
     "MCPStdioTool",
@@ -875,9 +905,9 @@ class MCPStdioTool(MCPTool):
         self.args = args or []
         self._env_secret_key = env_secret_key or f"{self._secret_prefix}/env"
         if env:
-            self._secret_store.set_secret(self._env_secret_key, json.dumps(env))
+            self._secret_store.set_secret(self._env_secret_key, _serialize_secret_value(env))
         self.env_description = (
-            self._secret_store.describe(self._env_secret_key)
+            SecretStr(self._secret_store.describe(self._env_secret_key))
             if env or env_secret_key
             else None
         )
@@ -893,7 +923,8 @@ class MCPStdioTool(MCPTool):
         """
         env: dict[str, str] | None = None
         if env_secret := self._secret_store.get_secret(self._env_secret_key):
-            env = json.loads(env_secret)
+            env_value = _deserialize_secret_value(env_secret)
+            env = env_value if isinstance(env_value, dict) else None
         args: dict[str, Any] = {
             "command": self.command,
             "args": self.args,
@@ -943,6 +974,7 @@ class MCPStreamableHTTPTool(MCPTool):
         approval_mode: (Literal["always_require", "never_require"] | HostedMCPSpecificApproval | None) = None,
         allowed_tools: Collection[str] | None = None,
         headers: dict[str, Any] | None = None,
+        auth: Any | None = None,
         timeout: float | None = None,
         sse_read_timeout: float | None = None,
         terminate_on_close: bool | None = None,
@@ -951,6 +983,7 @@ class MCPStreamableHTTPTool(MCPTool):
         secret_store: SecretStore | None = None,
         url_secret_key: str | None = None,
         headers_secret_key: str | None = None,
+        auth_secret_key: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the MCP streamable HTTP tool.
@@ -980,6 +1013,7 @@ class MCPStreamableHTTPTool(MCPTool):
             allowed_tools: A list of tools that are allowed to use this tool.
             additional_properties: Additional properties.
             headers: The headers to send with the request.
+            auth: Optional HTTP auth configuration passed to the MCP client.
             timeout: The timeout for the request.
             sse_read_timeout: The timeout for reading from the SSE stream.
             terminate_on_close: Close the transport when the MCP client is terminated.
@@ -987,6 +1021,7 @@ class MCPStreamableHTTPTool(MCPTool):
             secret_store: Optional store for sensitive connection values.
             url_secret_key: Optional key to use when storing the MCP URL.
             headers_secret_key: Optional key to use when storing HTTP headers.
+            auth_secret_key: Optional key to use when storing HTTP auth details.
             kwargs: Any extra arguments to pass to the SSE client.
         """
         super().__init__(
@@ -1004,17 +1039,28 @@ class MCPStreamableHTTPTool(MCPTool):
         )
         self._url_secret_key = url_secret_key or f"{self._secret_prefix}/http/url"
         self._headers_secret_key = headers_secret_key or f"{self._secret_prefix}/http/headers"
+        self._auth_secret_key = auth_secret_key or f"{self._secret_prefix}/http/auth"
+        headers_value = headers if headers is not None else kwargs.pop("headers", None)
+        auth_value = auth if auth is not None else kwargs.pop("auth", None)
         self._secret_store.set_secret(self._url_secret_key, url)
-        if headers:
-            self._secret_store.set_secret(self._headers_secret_key, json.dumps(headers))
-        self.url_description = self._secret_store.describe(self._url_secret_key)
+        if headers_value:
+            self._secret_store.set_secret(self._headers_secret_key, _serialize_secret_value(headers_value))
+        if auth_value is not None:
+            self._secret_store.set_secret(self._auth_secret_key, _serialize_secret_value(auth_value))
+        self.url_description = SecretStr(self._secret_store.describe(self._url_secret_key))
         self.headers_description = (
-            self._secret_store.describe(self._headers_secret_key)
-            if headers or headers_secret_key
+            SecretStr(self._secret_store.describe(self._headers_secret_key))
+            if headers_value or headers_secret_key
+            else None
+        )
+        self.auth_description = (
+            SecretStr(self._secret_store.describe(self._auth_secret_key))
+            if auth_value is not None or auth_secret_key
             else None
         )
         self.url = self.url_description
         self.headers = self.headers_description
+        self.auth = self.auth_description
         self.timeout = timeout
         self.sse_read_timeout = sse_read_timeout
         self.terminate_on_close = terminate_on_close
@@ -1031,12 +1077,17 @@ class MCPStreamableHTTPTool(MCPTool):
             raise ToolException("MCP streamable HTTP tool URL is missing")
         headers = None
         if headers_secret := self._secret_store.get_secret(self._headers_secret_key):
-            headers = json.loads(headers_secret)
+            headers = _deserialize_secret_value(headers_secret)
+        auth = None
+        if auth_secret := self._secret_store.get_secret(self._auth_secret_key):
+            auth = _deserialize_secret_value(auth_secret)
         args: dict[str, Any] = {
             "url": url,
         }
         if headers:
             args["headers"] = headers
+        if auth is not None:
+            args["auth"] = auth
         if self.timeout is not None:
             args["timeout"] = self.timeout
         if self.sse_read_timeout is not None:
@@ -1081,10 +1132,14 @@ class MCPWebsocketTool(MCPTool):
         description: str | None = None,
         approval_mode: (Literal["always_require", "never_require"] | HostedMCPSpecificApproval | None) = None,
         allowed_tools: Collection[str] | None = None,
+        headers: dict[str, Any] | None = None,
+        auth: Any | None = None,
         chat_client: "ChatClientProtocol | None" = None,
         additional_properties: dict[str, Any] | None = None,
         secret_store: SecretStore | None = None,
         url_secret_key: str | None = None,
+        headers_secret_key: str | None = None,
+        auth_secret_key: str | None = None,
         **kwargs: Any,
     ) -> None:
         """Initialize the MCP WebSocket tool.
@@ -1113,9 +1168,13 @@ class MCPWebsocketTool(MCPTool):
                 A tool should not be listed in both, if so, it will require approval.
             allowed_tools: A list of tools that are allowed to use this tool.
             additional_properties: Additional properties.
+            headers: Optional headers to provide when connecting.
+            auth: Optional WebSocket auth configuration passed to the MCP client.
             chat_client: The chat client to use for sampling.
             secret_store: Optional store for sensitive connection values.
             url_secret_key: Optional key to use when storing the MCP URL.
+            headers_secret_key: Optional key to use when storing WebSocket headers.
+            auth_secret_key: Optional key to use when storing WebSocket auth details.
             kwargs: Any extra arguments to pass to the WebSocket client.
         """
         super().__init__(
@@ -1132,9 +1191,29 @@ class MCPWebsocketTool(MCPTool):
             secret_store=secret_store,
         )
         self._url_secret_key = url_secret_key or f"{self._secret_prefix}/websocket/url"
+        self._headers_secret_key = headers_secret_key or f"{self._secret_prefix}/websocket/headers"
+        self._auth_secret_key = auth_secret_key or f"{self._secret_prefix}/websocket/auth"
+        headers_value = headers if headers is not None else kwargs.pop("headers", None)
+        auth_value = auth if auth is not None else kwargs.pop("auth", None)
         self._secret_store.set_secret(self._url_secret_key, url)
-        self.url_description = self._secret_store.describe(self._url_secret_key)
+        if headers_value:
+            self._secret_store.set_secret(self._headers_secret_key, _serialize_secret_value(headers_value))
+        if auth_value is not None:
+            self._secret_store.set_secret(self._auth_secret_key, _serialize_secret_value(auth_value))
+        self.url_description = SecretStr(self._secret_store.describe(self._url_secret_key))
+        self.headers_description = (
+            SecretStr(self._secret_store.describe(self._headers_secret_key))
+            if headers_value is not None or headers_secret_key
+            else None
+        )
+        self.auth_description = (
+            SecretStr(self._secret_store.describe(self._auth_secret_key))
+            if auth_value is not None or auth_secret_key
+            else None
+        )
         self.url = self.url_description
+        self.headers = self.headers_description
+        self.auth = self.auth_description
         self._client_kwargs = kwargs
 
     def get_mcp_client(self) -> _AsyncGeneratorContextManager[Any, None]:
@@ -1146,9 +1225,19 @@ class MCPWebsocketTool(MCPTool):
         url = self._secret_store.get_secret(self._url_secret_key)
         if not url:
             raise ToolException("MCP websocket tool URL is missing")
+        headers = None
+        if headers_secret := self._secret_store.get_secret(self._headers_secret_key):
+            headers = _deserialize_secret_value(headers_secret)
+        auth = None
+        if auth_secret := self._secret_store.get_secret(self._auth_secret_key):
+            auth = _deserialize_secret_value(auth_secret)
         args: dict[str, Any] = {
             "url": url,
         }
+        if headers:
+            args["headers"] = headers
+        if auth is not None:
+            args["auth"] = auth
         if self._client_kwargs:
             args.update(self._client_kwargs)
         return websocket_client(**args)

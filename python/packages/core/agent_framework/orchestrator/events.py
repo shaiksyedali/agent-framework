@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .approvals import ApprovalRequest, ApprovalDecision
+
+if TYPE_CHECKING:
+    from agent_framework.agents.planner import PlanArtifact
 
 
 @dataclass
@@ -54,3 +57,10 @@ class ApprovalEvent(OrchestrationEvent):
 @dataclass
 class ApprovalRequiredEvent(ApprovalEvent):
     pass
+
+
+@dataclass
+class PlanProposedEvent(OrchestrationEvent):
+    """Emitted when a planner has produced a plan to review."""
+
+    plan: "PlanArtifact"

@@ -1,6 +1,13 @@
 """High-level orchestrator utilities for coordinating agent workflows."""
 
-from .approvals import ApprovalCallback, ApprovalDecision, ApprovalRequest, ApprovalType
+from .approvals import (
+    ApprovalAuditRecord,
+    ApprovalCallback,
+    ApprovalDecision,
+    ApprovalPolicy,
+    ApprovalRequest,
+    ApprovalType,
+)
 from .context import OrchestrationContext
 from .events import (
     ApprovalEvent,
@@ -19,6 +26,8 @@ from .runner import Orchestrator, OrchestrationError
 __all__ = [
     "ApprovalCallback",
     "ApprovalDecision",
+    "ApprovalAuditRecord",
+    "ApprovalPolicy",
     "ApprovalEvent",
     "ApprovalRequiredEvent",
     "PlanProposedEvent",

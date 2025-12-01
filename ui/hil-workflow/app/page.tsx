@@ -6,7 +6,7 @@ import EventStream from '../components/EventStream';
 import ExecutionConsole from '../components/ExecutionConsole';
 import RunHistory from '../components/RunHistory';
 import WorkflowBuilder from '../components/WorkflowBuilder';
-import { startMockRun, type MockRunHandle } from '../lib/mockClient';
+import { currentModeLabel, startRun, type RunHandle } from '../lib/runClient';
 import type { EventEnvelope, RunRecord, WorkflowDefinition } from '../lib/types';
 
 const defaultDefinition: WorkflowDefinition = {

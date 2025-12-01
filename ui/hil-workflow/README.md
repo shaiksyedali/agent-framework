@@ -9,6 +9,7 @@ A Next.js UI for configuring and monitoring human-in-the-loop (HIL) agentic work
 - Approval panel to accept/reject planner/SQL actions, with mock artifacts for visibility.
 - Recent run history table to showcase status across engines.
 
+## Running locally (UI only)
 ## Running locally
 ```bash
 cd ui/hil-workflow
@@ -27,9 +28,11 @@ Navigate to `http://localhost:3000` to use the UI. All data is mocked via `lib/m
 - `app/page.tsx`: top-level composition of builder, approvals, execution, and history panels.
 - `components/`: reusable UI widgets (event stream, execution console, approvals, history).
 - `components/forms/`: workflow capture forms for persona, data sources, and steps.
+- `lib/`: shared types plus API + mock clients that simulate orchestrator behavior.
 - `lib/`: shared types and the mock client that simulates orchestrator behavior.
 - `app/globals.css`: minimal styling inspired by the dark spec screens.
 
 ## Notes
 - Tailwind is configured but only a handful of utility classes are used; the current styling relies on the shared CSS tokens in `globals.css` for clarity.
+- The mock and API clients emit plan → SQL → RAG → Reasoning → Response events and pause for approval before SQL execution to reflect HIL flows.
 - The mock client emits plan → SQL → RAG → Reasoning → Response events and pauses for approval before SQL execution to reflect HIL flows.

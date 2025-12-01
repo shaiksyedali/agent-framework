@@ -19,10 +19,12 @@ purpose: Gap analysis and next steps to make the HIL agentic framework productio
 - **UI-backend integration**: UI uses a mock client; it lacks connectors to real APIs for ingestion, run creation, streaming events, approval submission, and run history queries.
 
 ## Recommended next steps (priority ordered)
-1) **Expose backend APIs and persistence**  
-   - Add a workflow service that stores definitions (name, persona, prompts, data sources, steps) and returns a workflow ID.  
-   - Implement run creation endpoints that pick engine-specific connectors, construct `HilOrchestrator`, and stream events over SSE/WS; add approval endpoints that unblock paused steps.  
+1) **Expose backend APIs and persistence**
+   - Add a workflow service that stores definitions (name, persona, prompts, data sources, steps) and returns a workflow ID.
+   - Implement run creation endpoints that pick engine-specific connectors, construct `HilOrchestrator`, and stream events over SSE/WS; add approval endpoints that unblock paused steps.
    - Persist run state, artifacts (plan drafts, SQL text/results, RAG snippets), and chat history for follow-up questions.
+
+   **Progress:** Added a lightweight FastAPI sample (`python/samples/demos/hil_workflow/server.py`) that exposes `/workflows`, `/runs`, `/runs/{id}/events`, and approval endpoints with the same event envelope as the UI. It is in-memory and synthetic but demonstrates the contract the UI consumes via `NEXT_PUBLIC_HIL_API_BASE`.
 
 2) **Finish data connectors and grounding**  
    - Wire vector store ingestion (chunking, embedding, metadata) and retrieval tools that emit cited snippets.  

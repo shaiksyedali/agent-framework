@@ -1,12 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { EventEnvelope, RunRecord, WorkflowDefinition } from './types';
-
-export interface MockRunHandle {
-  run: RunRecord;
-  subscribe: (listener: (event: EventEnvelope) => void) => () => void;
-  approve: (message?: string) => void;
-  reject: (message?: string) => void;
-}
+import type { RunHandle } from './runClient';
 
 const steps: Array<Pick<EventEnvelope, 'type' | 'message'>> = [
   { type: 'plan', message: 'Planner drafted a step graph based on persona and data access.' },
@@ -16,7 +10,7 @@ const steps: Array<Pick<EventEnvelope, 'type' | 'message'>> = [
   { type: 'response', message: 'Responder formatted answer with citations and suggested follow-ups.' }
 ];
 
-export function startMockRun(definition: WorkflowDefinition): MockRunHandle {
+export function startMockRun(definition: WorkflowDefinition): RunHandle {
   const runId = uuidv4();
   const run: RunRecord = {
     id: runId,

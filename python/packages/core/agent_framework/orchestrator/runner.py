@@ -22,6 +22,7 @@ from .events import (
     OrchestrationStepCompletedEvent,
     OrchestrationStepFailedEvent,
     OrchestrationStepStartedEvent,
+    PlanProposedEvent,
 )
 from .graph import StepDefinition, StepGraph
 
@@ -91,6 +92,10 @@ class Orchestrator:
             step_name=step.name,
             context_snapshot=_snapshot_context(context),
         )
+
+        plan_artifact = step.metadata.get("plan_artifact")
+        if plan_artifact is not None:
+            yield PlanProposedEvent(plan=plan_artifact, context_snapshot=_snapshot_context(context))
 
         if step.approval_type is not None:
             request = ApprovalRequest(

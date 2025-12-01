@@ -5,6 +5,7 @@ from .context import OrchestrationContext
 from .events import (
     ApprovalEvent,
     ApprovalRequiredEvent,
+    PlanProposedEvent,
     OrchestrationCompletedEvent,
     OrchestrationStartedEvent,
     OrchestrationStepCompletedEvent,
@@ -19,6 +20,7 @@ __all__ = [
     "ApprovalDecision",
     "ApprovalEvent",
     "ApprovalRequiredEvent",
+    "PlanProposedEvent",
     "ApprovalRequest",
     "ApprovalType",
     "OrchestrationCompletedEvent",

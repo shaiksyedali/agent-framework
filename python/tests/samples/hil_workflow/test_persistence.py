@@ -122,3 +122,34 @@ def test_duplicate_ingest_updates_document(tmp_path):
     assert updated_doc.metadata["version"] == "updated"
     assert updated_doc.metadata["source_id"] == document_id
     assert updated_doc.metadata["chunk_index"] == 0
+
+
+def test_ingest_twice_updates_fields_without_error(tmp_path):
+    db_path = tmp_path / "hil_workflow.sqlite"
+    backend = EmbeddingBackend()
+    store = Store(db_path)
+    vector_store = VectorStore(store, backend=backend)
+
+    workflow_id = "workflow-regression"
+    document_id = "doc-regression"
+
+    first_count = vector_store.ingest(
+        workflow_id,
+        [IngestDocument(id=document_id, text="first body", metadata={"version": 1})],
+    )
+
+    assert first_count == 1
+
+    second_count = vector_store.ingest(
+        workflow_id,
+        [IngestDocument(id=document_id, text="second body", metadata={"version": 2})],
+    )
+
+    assert second_count == 1
+
+    final_doc = store.list_documents(workflow_id)[0]
+    assert final_doc.content == "second body"
+    assert final_doc.embedding == pytest.approx(backend.embed("second body"))
+    assert final_doc.metadata["version"] == 2
+    assert final_doc.metadata["source_id"] == document_id
+    assert final_doc.metadata["chunk_index"] == 0

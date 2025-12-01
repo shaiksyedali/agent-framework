@@ -9,7 +9,7 @@ import StepList from './forms/StepList';
 interface Props {
   definition: WorkflowDefinition;
   onChange: (definition: WorkflowDefinition) => void;
-  onSubmit: () => void;
+  onSubmit: () => void | Promise<void>;
   busy?: boolean;
 }
 

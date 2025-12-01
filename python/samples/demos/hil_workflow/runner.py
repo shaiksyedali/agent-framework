@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict, List, Optional
@@ -84,14 +85,14 @@ class Runner:
 
     @staticmethod
     def _redact_detail(value: Any) -> Any:
-        if isinstance(value, dict):
+        if isinstance(value, str):
+            return Runner._redact(value)
+        if isinstance(value, Mapping):
             return {key: Runner._redact_detail(val) for key, val in value.items()}
         if isinstance(value, list):
             return [Runner._redact_detail(item) for item in value]
         if isinstance(value, tuple):
-            return tuple(Runner._redact_detail(item) for item in value)
-        if isinstance(value, str):
-            return Runner._redact(value)
+            return [Runner._redact_detail(item) for item in value]
         return value
 
     def _build_retriever(self, workflow_id: str, knowledge: Dict[str, Any]) -> Optional[LocalRetriever | AzureEmbeddingRetriever]:

@@ -8,6 +8,7 @@ from .planner import (
     PlanStep,
     Planner,
 )
+from .research import ReasoningAgent, ResponseGenerator, RetrievalAgent, RetrievedEvidence
 from .sql import SQLAgent, SQLAttempt, SQLExample, SQLExecutionResult, SQLPromptBuilder
 
 __all__ = [
@@ -17,6 +18,10 @@ __all__ = [
     "PlanArtifact",
     "PlanStep",
     "Planner",
+    "ReasoningAgent",
+    "ResponseGenerator",
+    "RetrievalAgent",
+    "RetrievedEvidence",
     "SQLAgent",
     "SQLAttempt",
     "SQLExample",

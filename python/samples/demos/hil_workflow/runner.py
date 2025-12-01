@@ -82,6 +82,18 @@ class Runner:
     def _redact(text: str) -> str:
         return PII_PATTERN.sub("[redacted]", text or "")
 
+    @staticmethod
+    def _redact_detail(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: Runner._redact_detail(val) for key, val in value.items()}
+        if isinstance(value, list):
+            return [Runner._redact_detail(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(Runner._redact_detail(item) for item in value)
+        if isinstance(value, str):
+            return Runner._redact(value)
+        return value
+
     def _build_retriever(self, workflow_id: str, knowledge: Dict[str, Any]) -> Optional[LocalRetriever | AzureEmbeddingRetriever]:
         # Attempt to use previously ingested documents first
         retriever = self.vectors.retriever_for(workflow_id)
@@ -179,7 +191,7 @@ class Runner:
 
     async def _emit(self, run_id: str, type_: str, message: str, detail: Optional[dict] = None) -> None:
         safe_message = self._redact(message)
-        safe_detail = detail or {}
+        safe_detail = self._redact_detail(detail) if detail is not None else {}
         await self._publish(
             run_id,
             StoredEvent(

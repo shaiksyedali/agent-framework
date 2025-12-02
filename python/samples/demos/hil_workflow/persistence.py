@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -313,7 +314,7 @@ class Store:
         return docs
 
     def record_artifact(self, run_id: str, kind: str, payload: Dict[str, Any]) -> str:
-        artifact_id = f"art_{run_id}_{int(datetime.now().timestamp()*1000)}"
+        artifact_id = str(uuid.uuid4())
         cur = self._conn.cursor()
         cur.execute(
             "INSERT INTO artifacts (id, run_id, kind, payload, created_at) VALUES (?, ?, ?, ?, ?)",

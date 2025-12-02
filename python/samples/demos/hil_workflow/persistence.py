@@ -278,8 +278,7 @@ class Store:
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 content = excluded.content,
-                embedding = excluded.embedding,
-                metadata = excluded.metadata
+                embedding = excluded.embedding, metadata = excluded.metadata
             """,
             (
                 document_id,

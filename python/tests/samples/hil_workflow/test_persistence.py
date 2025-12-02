@@ -153,3 +153,33 @@ def test_ingest_twice_updates_fields_without_error(tmp_path):
     assert final_doc.metadata["version"] == 2
     assert final_doc.metadata["source_id"] == document_id
     assert final_doc.metadata["chunk_index"] == 0
+
+
+def test_duplicate_ingest_replaces_document(tmp_path):
+    db_path = tmp_path / "hil_workflow.sqlite"
+    backend = EmbeddingBackend()
+    store = Store(db_path)
+    vector_store = VectorStore(store, backend=backend)
+
+    workflow_id = "workflow-regression-duplicate"
+    document_id = "doc-regression-duplicate"
+
+    vector_store.ingest(
+        workflow_id,
+        [IngestDocument(id=document_id, text="initial body", metadata={"version": "first"})],
+    )
+
+    vector_store.ingest(
+        workflow_id,
+        [IngestDocument(id=document_id, text="updated body", metadata={"version": "second"})],
+    )
+
+    stored_doc = store.list_documents(workflow_id)[0]
+
+    assert stored_doc.content == "updated body"
+    assert stored_doc.embedding == pytest.approx(backend.embed("updated body"))
+    assert stored_doc.metadata == {
+        "version": "second",
+        "source_id": document_id,
+        "chunk_index": 0,
+    }

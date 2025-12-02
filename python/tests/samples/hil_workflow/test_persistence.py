@@ -183,3 +183,33 @@ def test_duplicate_ingest_replaces_document(tmp_path):
         "source_id": document_id,
         "chunk_index": 0,
     }
+
+
+def test_ingest_moves_document_to_new_workflow(tmp_path):
+    db_path = tmp_path / "hil_workflow.sqlite"
+    backend = EmbeddingBackend()
+    store = Store(db_path)
+    vector_store = VectorStore(store, backend=backend)
+
+    document_id = "doc-move"
+
+    vector_store.ingest(
+        "workflow-original",
+        [IngestDocument(id=document_id, text="first body", metadata={"version": "original"})],
+    )
+
+    assert store.list_documents("workflow-original")[0].metadata["version"] == "original"
+
+    vector_store.ingest(
+        "workflow-updated",
+        [IngestDocument(id=document_id, text="new body", metadata={"version": "updated"})],
+    )
+
+    assert store.list_documents("workflow-original") == []
+
+    updated_doc = store.list_documents("workflow-updated")[0]
+    assert updated_doc.content == "new body"
+    assert updated_doc.embedding == pytest.approx(backend.embed("new body"))
+    assert updated_doc.metadata["version"] == "updated"
+    assert updated_doc.metadata["source_id"] == document_id
+    assert updated_doc.metadata["chunk_index"] == 0

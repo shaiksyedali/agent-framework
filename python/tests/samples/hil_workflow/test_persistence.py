@@ -8,6 +8,8 @@ sys.path.append(str(ROOT / "packages" / "core"))
 
 import pytest
 
+import samples.demos.hil_workflow.persistence as persistence
+
 
 def _install_test_stubs() -> None:
     agent_framework_module = types.ModuleType("agent_framework")
@@ -153,3 +155,96 @@ def test_ingest_twice_updates_fields_without_error(tmp_path):
     assert final_doc.metadata["version"] == 2
     assert final_doc.metadata["source_id"] == document_id
     assert final_doc.metadata["chunk_index"] == 0
+
+
+def test_duplicate_ingest_replaces_document(tmp_path):
+    db_path = tmp_path / "hil_workflow.sqlite"
+    backend = EmbeddingBackend()
+    store = Store(db_path)
+    vector_store = VectorStore(store, backend=backend)
+
+    workflow_id = "workflow-regression-duplicate"
+    document_id = "doc-regression-duplicate"
+
+    vector_store.ingest(
+        workflow_id,
+        [IngestDocument(id=document_id, text="initial body", metadata={"version": "first"})],
+    )
+
+    vector_store.ingest(
+        workflow_id,
+        [IngestDocument(id=document_id, text="updated body", metadata={"version": "second"})],
+    )
+
+    stored_doc = store.list_documents(workflow_id)[0]
+
+    assert stored_doc.content == "updated body"
+    assert stored_doc.embedding == pytest.approx(backend.embed("updated body"))
+    assert stored_doc.metadata == {
+        "version": "second",
+        "source_id": document_id,
+        "chunk_index": 0,
+    }
+
+
+def test_ingest_moves_document_to_new_workflow(tmp_path):
+    db_path = tmp_path / "hil_workflow.sqlite"
+    backend = EmbeddingBackend()
+    store = Store(db_path)
+    vector_store = VectorStore(store, backend=backend)
+
+    document_id = "doc-move"
+
+    vector_store.ingest(
+        "workflow-original",
+        [IngestDocument(id=document_id, text="first body", metadata={"version": "original"})],
+    )
+
+    assert store.list_documents("workflow-original")[0].metadata["version"] == "original"
+
+    vector_store.ingest(
+        "workflow-updated",
+        [IngestDocument(id=document_id, text="new body", metadata={"version": "updated"})],
+    )
+
+    assert store.list_documents("workflow-original") == []
+
+    updated_doc = store.list_documents("workflow-updated")[0]
+    assert updated_doc.content == "new body"
+    assert updated_doc.embedding == pytest.approx(backend.embed("new body"))
+    assert updated_doc.metadata["version"] == "updated"
+    assert updated_doc.metadata["source_id"] == document_id
+    assert updated_doc.metadata["chunk_index"] == 0
+
+
+def test_upsert_refreshes_timestamp_on_update(tmp_path, monkeypatch):
+    db_path = tmp_path / "hil_workflow.sqlite"
+    store = Store(db_path)
+
+    timestamps = iter(["first-ingest", "second-ingest"])
+    monkeypatch.setattr(persistence, "_utc_now", lambda: next(timestamps))
+
+    store.upsert_document(
+        document_id="doc-timestamp",
+        workflow_id="wf",
+        content="initial",
+        embedding=[1.0],
+        metadata={"note": "first"},
+    )
+
+    initial_doc = store.list_documents("wf")[0]
+    assert initial_doc.created_at == "first-ingest"
+
+    store.upsert_document(
+        document_id="doc-timestamp",
+        workflow_id="wf",
+        content="updated",
+        embedding=[2.0],
+        metadata={"note": "second"},
+    )
+
+    updated_doc = store.list_documents("wf")[0]
+    assert updated_doc.created_at == "second-ingest"
+    assert updated_doc.content == "updated"
+    assert updated_doc.embedding == pytest.approx([2.0])
+    assert updated_doc.metadata["note"] == "second"

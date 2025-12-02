@@ -277,9 +277,9 @@ class Store:
             INSERT INTO documents (id, workflow_id, content, embedding, metadata, created_at)
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
+                workflow_id = excluded.workflow_id,
                 content = excluded.content,
-                embedding = excluded.embedding,
-                metadata = excluded.metadata
+                embedding = excluded.embedding, metadata = excluded.metadata, created_at = excluded.created_at
             """,
             (
                 document_id,

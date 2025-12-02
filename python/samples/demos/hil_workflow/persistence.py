@@ -279,7 +279,7 @@ class Store:
             ON CONFLICT(id) DO UPDATE SET
                 workflow_id = excluded.workflow_id,
                 content = excluded.content,
-                embedding = excluded.embedding, metadata = excluded.metadata
+                embedding = excluded.embedding, metadata = excluded.metadata, created_at = excluded.created_at
             """,
             (
                 document_id,

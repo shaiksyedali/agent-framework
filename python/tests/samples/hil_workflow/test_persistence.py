@@ -8,6 +8,8 @@ sys.path.append(str(ROOT / "packages" / "core"))
 
 import pytest
 
+import samples.demos.hil_workflow.persistence as persistence
+
 
 def _install_test_stubs() -> None:
     agent_framework_module = types.ModuleType("agent_framework")
@@ -213,3 +215,36 @@ def test_ingest_moves_document_to_new_workflow(tmp_path):
     assert updated_doc.metadata["version"] == "updated"
     assert updated_doc.metadata["source_id"] == document_id
     assert updated_doc.metadata["chunk_index"] == 0
+
+
+def test_upsert_refreshes_timestamp_on_update(tmp_path, monkeypatch):
+    db_path = tmp_path / "hil_workflow.sqlite"
+    store = Store(db_path)
+
+    timestamps = iter(["first-ingest", "second-ingest"])
+    monkeypatch.setattr(persistence, "_utc_now", lambda: next(timestamps))
+
+    store.upsert_document(
+        document_id="doc-timestamp",
+        workflow_id="wf",
+        content="initial",
+        embedding=[1.0],
+        metadata={"note": "first"},
+    )
+
+    initial_doc = store.list_documents("wf")[0]
+    assert initial_doc.created_at == "first-ingest"
+
+    store.upsert_document(
+        document_id="doc-timestamp",
+        workflow_id="wf",
+        content="updated",
+        embedding=[2.0],
+        metadata={"note": "second"},
+    )
+
+    updated_doc = store.list_documents("wf")[0]
+    assert updated_doc.created_at == "second-ingest"
+    assert updated_doc.content == "updated"
+    assert updated_doc.embedding == pytest.approx([2.0])
+    assert updated_doc.metadata["note"] == "second"

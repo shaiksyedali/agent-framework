@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 import sqlite3
 from dataclasses import dataclass
-from typing import Any, Callable, Sequence
+from typing import TYPE_CHECKING
 
-from agent_framework.orchestrator.approvals import ApprovalType
+if TYPE_CHECKING:
+    from agent_framework.orchestrator.approvals import ApprovalType
 from agent_framework.security.secrets import SecretStore
 
 
@@ -70,6 +71,11 @@ class SQLConnector:
     def __init__(self, *, approval_policy: SQLApprovalPolicy | None = None) -> None:
         self.approval_policy = approval_policy or SQLApprovalPolicy()
 
+    @property
+    def dialect(self) -> str | None:
+        """Return the SQL dialect name for this connector (sqlite, duckdb, postgresql, mssql)."""
+        return None
+
     def get_schema(self) -> str:
         """Return a human-readable schema description for the data source."""
 
@@ -81,7 +87,9 @@ class SQLConnector:
         raise NotImplementedError
 
     @property
-    def approval_type(self) -> ApprovalType:
+    def approval_type(self) -> "ApprovalType":
+        from agent_framework.orchestrator.approvals import ApprovalType
+
         return ApprovalType.SQL
 
 
@@ -92,6 +100,10 @@ class SQLiteConnector(SQLConnector):
         super().__init__(approval_policy=approval_policy)
         self.approval_policy.engine = self.approval_policy.engine or "sqlite"
         self._database = database
+
+    @property
+    def dialect(self) -> str:
+        return "sqlite"
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._database)
@@ -132,6 +144,10 @@ class DuckDBConnector(SQLConnector):
         self.approval_policy.engine = self.approval_policy.engine or "duckdb"
         self._database = database
         self._read_only = read_only
+
+    @property
+    def dialect(self) -> str:
+        return "duckdb"
 
     def _connect(self):  # pragma: no cover - thin wrapper
         try:
@@ -188,6 +204,10 @@ class PostgresConnector(SQLConnector):
         self._connection_secret_key = connection_secret_key or "postgres_connection"
         if connection_string:
             self._secret_store.set_secret(self._connection_secret_key, connection_string)
+
+    @property
+    def dialect(self) -> str:
+        return "postgresql"
 
     def _open_connection(self):
         try:

@@ -1,0 +1,31 @@
+{
+  "created_at": "63484.947967902",
+  "project_endpoint": "https://pi12-resource.services.ai.azure.com/api/projects/pi12",
+  "model": "gpt-4o",
+  "agents": {
+    "supervisor": {
+      "id": "asst_lPwDA2mm8cMhtqpAf9jAQXID",
+      "name": "supervisor_agent"
+    },
+    "planner": {
+      "id": "asst_KyN7a6ufIJI4a7M7eY5NWnsv",
+      "name": "planner_agent"
+    },
+    "executor": {
+      "id": "asst_5WsS1rhRFOUWLQSgFzJUbUol",
+      "name": "executor_agent"
+    },
+    "sql_agent": {
+      "id": "asst_LDvA7MRTgKPtIkmxE6vfpYcR",
+      "name": "sql_agent"
+    },
+    "rag_agent": {
+      "id": "asst_aHHBM1hrXba1aV5t87KCEObj",
+      "name": "rag_agent"
+    },
+    "response_generator": {
+      "id": "asst_vEqmVREOzPOJ2c4XLzNrRvbI",
+      "name": "response_generator"
+    }
+  }
+}

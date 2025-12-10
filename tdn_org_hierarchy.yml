@@ -1,0 +1,47 @@
+division: TDN
+org_units:
+  - code: TDNA
+    name: Automation & ADAS
+    type: subunit
+    parent: TDN
+    teams:
+      - TDNA1
+      - TDNA2
+  - code: TDNC
+    name: Connectivity & Data
+    type: subunit
+    parent: TDN
+    teams:
+      - TDNC1
+  - code: TDNE
+    name: Efficiency & Electrification
+    type: subunit
+    parent: TDN
+    teams:
+      - TDNE1
+      - TDNE2
+      - TDNE3
+      - TDNE4
+  - code: TDNI
+    name: Innovation
+    type: subunit
+    parent: TDN
+    teams:
+      - TDNI1
+      - TDNI2
+      - TDNI3
+  - code: TDNL
+    name: Innovation Lab
+    type: subunit
+    parent: TDN
+  - code: TDNP
+    name: Platform
+    type: subunit
+    parent: TDN
+    teams:
+      - TDNP1
+      - TDNP2
+  - code: TDNR
+    name: Regulations
+    type: subunit
+    parent: TDN

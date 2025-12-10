@@ -61,27 +61,158 @@ class SQLExecutionResult:
     attempts: list[SQLAttempt] = field(default_factory=list)
 
 
+def get_dialect_instructions(dialect: str | None) -> str:
+    """Get database-specific SQL syntax instructions.
+    
+    Args:
+        dialect: Database dialect name (duckdb, postgresql, sqlite, mssql, etc.)
+        
+    Returns:
+        Dialect-specific instructions for the LLM
+    """
+    if not dialect:
+        return ""
+    
+    dialect = dialect.lower()
+    
+    if "duckdb" in dialect:
+        return """
+**DuckDB Syntax:**
+- Use INTERVAL arithmetic: `ts > now() - INTERVAL 2 MONTH`
+- Use `date_trunc('month', col)` for date bucketing
+- Do NOT use DATEADD/DATE_ADD syntax
+- Avoid window functions in WHERE clauses; use CTE instead
+- Use `LIMIT` for row limits
+"""
+    
+    if "postgres" in dialect or "postgresql" in dialect:
+        return """
+**PostgreSQL Syntax:**
+- Use INTERVAL: `ts > now() - INTERVAL '2 months'`
+- Use `date_trunc('month', col)` for date bucketing
+- Use `::date` or `::timestamp` for casting
+- Use `LIMIT` for row limits
+"""
+    
+    if "sqlite" in dialect:
+        return """
+**SQLite Syntax:**
+- Do NOT use YEAR()/MONTH(); use `strftime('%Y', col)` or `strftime('%m', col)`
+- Use `datetime('now', '-2 months')` for relative date filters
+- Use `date(col)` for date extraction
+- Use `LIMIT` for row limits
+"""
+    
+    if "mssql" in dialect or "sqlserver" in dialect or "sql server" in dialect:
+        return """
+**SQL Server Syntax:**
+- Use `DATEADD(month, -2, GETDATE())` for date math
+- Use `DATETRUNC(month, col)` for date bucketing (SQL Server 2022+)
+- Use `DATEDIFF` for date differences
+- Use `TOP n` instead of LIMIT for row limits
+- Use `FORMAT(col, 'yyyy-MM')` for date formatting
+"""
+    
+    return ""
+
+
+def build_enriched_schema(
+    schema: str,
+    schema_context: str | None = None,
+    *,
+    include_header: bool = True,
+) -> str:
+    """Build an enriched schema by combining raw schema with RAG context.
+    
+    This helper function creates a well-formatted schema document that combines
+    the database schema with semantic context from a knowledge base (RAG).
+    
+    Args:
+        schema: Raw database schema (tables and columns)
+        schema_context: Additional context from RAG (descriptions, business rules)
+        include_header: Whether to include section headers
+        
+    Returns:
+        Enriched schema string ready for SQL generation
+        
+    Example:
+        >>> schema = connector.get_schema()
+        >>> context = await rag_agent.run("schema documentation")
+        >>> enriched = build_enriched_schema(schema, context.text)
+    """
+    if not schema_context:
+        return schema
+    
+    if include_header:
+        return (
+            f"## Database Schema\n{schema}\n\n"
+            f"## Schema Documentation\n{schema_context}"
+        )
+    else:
+        return f"{schema}\n\n{schema_context}"
+
+
 class SQLPromptBuilder:
-    """Build prompts with schema and few-shot guidance."""
+    """Build prompts with schema, dialect, RAG context, and few-shot guidance."""
 
     def __init__(
         self,
         *,
         schema: str,
+        dialect: str | None = None,
+        schema_context: str | None = None,
         history: Sequence[SQLExample] | None = None,
         max_examples: int = 3,
     ) -> None:
+        """Initialize the prompt builder.
+        
+        Args:
+            schema: Raw database schema (tables and columns)
+            dialect: Database dialect for syntax hints (duckdb, postgresql, sqlite, mssql)
+            schema_context: Additional context from RAG (column descriptions, business rules)
+            history: Few-shot examples to include
+            max_examples: Maximum number of examples to include
+        """
         self._schema = schema
+        self._dialect = dialect
+        self._schema_context = schema_context
         self._history = list(history or [])[:max_examples]
         self._max_examples = max_examples
 
     def build(self, goal: str, feedback: str | None = None) -> str:
+        """Build the full prompt for SQL generation.
+        
+        Args:
+            goal: The user's natural language query
+            feedback: Feedback from previous failed attempts
+            
+        Returns:
+            Complete prompt string for LLM
+        """
         parts: list[str] = [
             "You are an expert data analyst that produces syntactically correct SQL.",
-            "Use the following database schema to ground your query:",
-            self._schema or "<unknown schema>",
         ]
+        
+        # Add raw schema
+        parts.append("## Database Schema")
+        parts.append(self._schema or "<unknown schema>")
+        
+        # Add RAG context if available (column descriptions, business rules)
+        if self._schema_context:
+            parts.append("## Schema Documentation (from knowledge base)")
+            parts.append(
+                "Use this context to understand column meanings, business rules, "
+                "and data relationships:"
+            )
+            parts.append(self._schema_context)
+        
+        # Add dialect-specific instructions
+        dialect_instructions = get_dialect_instructions(self._dialect)
+        if dialect_instructions:
+            parts.append("## SQL Syntax Guidelines")
+            parts.append(dialect_instructions)
 
+        # Add few-shot examples
         if self._history:
             examples = self._history[: self._max_examples]
             rendered = []
@@ -93,16 +224,21 @@ class SQLPromptBuilder:
                     + example.sql
                     + (f"\nAnswer: {example.answer}" if example.answer is not None else "")
                 )
-            parts.append("Previous solutions to emulate:\n" + "\n\n".join(rendered))
+            parts.append("## Example Queries")
+            parts.append("Use these as reference for similar problems:\n" + "\n\n".join(rendered))
 
+        # Add feedback from previous attempts
         if feedback:
-            parts.append(f"Incorporate this feedback from earlier attempts: {feedback}")
+            parts.append("## Feedback from Earlier Attempts")
+            parts.append(f"**IMPORTANT:** {feedback}")
 
+        # Final instruction
+        parts.append("## Your Task")
         parts.append(
-            "Respond with a single SQL statement that answers the request."
-            " Avoid DDL/DML unless explicitly requested."
+            f"User request: {goal}\n\n"
+            "Respond with a single SQL statement that answers the request. "
+            "Avoid DDL/DML unless explicitly requested."
         )
-        parts.append(f"User request: {goal}")
         return "\n\n".join(parts)
 
 
@@ -126,6 +262,8 @@ class SQLAgent:
         connector: SQLConnector,
         *,
         schema: str | None = None,
+        schema_context: str | None = None,
+        dialect: str | None = None,
         history: Sequence[SQLExample] | None = None,
         max_attempts: int = 3,
         validator: Callable[[list[dict[str, Any]]], bool] | None = None,
@@ -136,7 +274,24 @@ class SQLAgent:
         redaction_hook: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
         verify_numeric_results: bool = True,
     ) -> SQLExecutionResult:
-        """Generate SQL for a goal, run it, and retry on errors or invalid answers."""
+        """Generate SQL for a goal, run it, and retry on errors or invalid answers.
+        
+        Args:
+            goal: Natural language query to convert to SQL
+            connector: Database connector for execution
+            schema: Optional schema override (otherwise fetched from connector)
+            schema_context: RAG context with column descriptions, business rules (from knowledge base)
+            dialect: Database dialect (duckdb, postgresql, sqlite, mssql) for syntax hints
+            history: Additional few-shot examples for this query
+            max_attempts: Maximum retry attempts (default: 3)
+            validator: Optional function to validate results
+            fetch_raw_after_aggregation: Fetch raw records if aggregation detected
+            enable_calculator_fallback: Try to evaluate as math expression if not SQL
+            allow_writes: Allow DML operations
+            row_limit: Maximum rows to return
+            redaction_hook: Optional function to redact sensitive data
+            verify_numeric_results: Verify single numeric results are valid
+        """
 
         attempts: list[SQLAttempt] = []
         feedback: str | None = None
@@ -145,11 +300,17 @@ class SQLAgent:
         )
         enforced_row_limit = row_limit if row_limit is not None else connector.approval_policy.row_limit
         schema_text = schema or connector.get_schema()
+        
+        # Get dialect from connector if not specified
+        connector_dialect = dialect or getattr(connector, "dialect", None)
+        
         examples: list[SQLExample] = list(self._few_shot_examples)
         if history:
             examples.extend(history)
         prompt_builder = SQLPromptBuilder(
             schema=schema_text,
+            schema_context=schema_context,
+            dialect=connector_dialect,
             history=examples,
             max_examples=self._few_shot_limit,
         )
@@ -363,4 +524,6 @@ __all__ = [
     "SQLExample",
     "SQLExecutionResult",
     "SQLPromptBuilder",
+    "build_enriched_schema",
+    "get_dialect_instructions",
 ]

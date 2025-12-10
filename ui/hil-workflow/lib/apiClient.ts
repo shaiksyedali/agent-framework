@@ -1,22 +1,25 @@
-import type { ArtifactRecord, EventEnvelope, KnowledgeSources, RunRecord, WorkflowDefinition } from './types';
-import type { RunHandle } from './runClient';
+import type {
+  WorkflowConfig,
+  AgentConfig,
+  JobStatus,
+  ExecuteRequest,
+  ResumeRequest,
+  ChatRequest,
+  PlanRequest,
+  DataSourceConfig
+} from './types';
 
-const baseUrl = process.env.NEXT_PUBLIC_HIL_API_BASE;
+const baseUrl = process.env.NEXT_PUBLIC_HIL_API_BASE || 'http://127.0.0.1:8000';
 
 export const apiAvailable = Boolean(baseUrl);
 
-type ProgressCallback = (status: string) => void;
-
-async function postJSON<T>(path: string, body: unknown): Promise<T> {
-  if (!baseUrl) {
-    throw new Error('API base URL not configured');
-  }
+async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${baseUrl}${path}`, {
-    method: 'POST',
+    ...options,
     headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(body)
+      'Content-Type': 'application/json',
+      ...options?.headers
+    }
   });
   const payload = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -26,109 +29,107 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return payload as T;
 }
 
-async function ingestFromForm(workflowId: string, knowledge: KnowledgeSources, onProgress?: ProgressCallback) {
-  if (!knowledge.documentText?.trim()) {
-    return { ingested: 0 };
-  }
-  onProgress?.('Ingesting attached knowledge');
-  return postJSON<{ ingested: number }>(`/knowledge`, {
-    workflowId,
-    documents: [
-      {
-        text: knowledge.documentText.trim(),
-        metadata: {
-          source: knowledge.documentsPath || 'inline',
-          ingestedAt: new Date().toISOString()
-        }
-      }
-    ]
+// ===== AGENTS =====
+
+export async function listAgents(): Promise<AgentConfig[]> {
+  return fetchJSON<AgentConfig[]>('/agents');
+}
+
+// ===== WORKFLOWS =====
+
+export async function listWorkflows(): Promise<WorkflowConfig[]> {
+  return fetchJSON<WorkflowConfig[]>('/workflows');
+}
+
+export async function getWorkflow(workflowId: string): Promise<WorkflowConfig> {
+  return fetchJSON<WorkflowConfig>(`/workflows/${workflowId}`);
+}
+
+export async function createWorkflow(workflow: WorkflowConfig): Promise<WorkflowConfig> {
+  return fetchJSON<WorkflowConfig>('/workflows', {
+    method: 'POST',
+    body: JSON.stringify(workflow)
   });
 }
 
-export async function startApiRun(
-  definition: WorkflowDefinition,
-  onProgress?: ProgressCallback
-): Promise<RunHandle> {
-  if (!baseUrl) {
-    throw new Error('API base URL not configured');
-  }
-
-  onProgress?.('Creating workflow');
-  const workflowRes = await postJSON<{ id: string }>(`/workflows`, definition);
-  await ingestFromForm(workflowRes.id, definition.knowledge, onProgress);
-  onProgress?.('Starting run');
-  const run = await postJSON<RunRecord>(`/runs`, { workflowId: workflowRes.id });
-
-  let eventSource: EventSource | null = null;
-
-  const subscribe = (onEvent: (event: EventEnvelope) => void) => {
-    eventSource = new EventSource(`${baseUrl}/runs/${run.id}/events`);
-    eventSource.onmessage = evt => {
-      try {
-        const parsed = JSON.parse(evt.data) as EventEnvelope;
-        onEvent(parsed);
-      } catch (err) {
-        console.error('Failed to parse event', err);
-      }
-    };
-    eventSource.onerror = err => {
-      console.error('EventSource error', err);
-    };
-
-    return () => {
-      eventSource?.close();
-    };
-  };
-
-  const approve = async (reason?: string) => {
-    await postJSON(`/runs/${run.id}/approve`, { reason });
-  };
-
-  const reject = async (reason?: string) => {
-    await postJSON(`/runs/${run.id}/reject`, { reason });
-  };
-
-  return {
-    run,
-    subscribe,
-    approve,
-    reject,
-    workflowId: workflowRes.id,
-    stop: () => eventSource?.close()
-  };
+export async function deleteWorkflow(workflowId: string): Promise<{ message: string }> {
+  return fetchJSON<{ message: string }>(`/workflows/${workflowId}`, {
+    method: 'DELETE'
+  });
 }
 
-export async function fetchApiRuns(): Promise<RunRecord[]> {
-  if (!baseUrl) {
-    return [];
-  }
-  const res = await fetch(`${baseUrl}/runs`);
+// ===== EXECUTION =====
+
+export async function executeWorkflow(request: ExecuteRequest): Promise<JobStatus> {
+  return fetchJSON<JobStatus>('/execute', {
+    method: 'POST',
+    body: JSON.stringify(request)
+  });
+}
+
+export async function getJobStatus(jobId: string): Promise<JobStatus> {
+  return fetchJSON<JobStatus>(`/jobs/${jobId}`);
+}
+
+export async function resumeJob(request: ResumeRequest): Promise<JobStatus> {
+  return fetchJSON<JobStatus>('/resume', {
+    method: 'POST',
+    body: JSON.stringify(request)
+  });
+}
+
+// ===== PLANNING =====
+
+export async function createPlan(request: PlanRequest): Promise<WorkflowConfig> {
+  return fetchJSON<WorkflowConfig>('/plan', {
+    method: 'POST',
+    body: JSON.stringify(request)
+  });
+}
+
+// ===== CHAT =====
+
+export async function chatWithJob(request: ChatRequest): Promise<{ response: string; context: any }> {
+  return fetchJSON<{ response: string; context: any }>('/chat', {
+    method: 'POST',
+    body: JSON.stringify(request)
+  });
+}
+
+// ===== FILE OPERATIONS =====
+
+export async function listFiles(path: string = '.'): Promise<Array<{
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+}>> {
+  return fetchJSON<Array<{
+    name: string;
+    path: string;
+    is_dir: boolean;
+    size: number;
+  }>>(`/files?path=${encodeURIComponent(path)}`);
+}
+
+export async function uploadFile(file: File, path: string = '.'): Promise<{ message: string; path: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const res = await fetch(`${baseUrl}/upload?path=${encodeURIComponent(path)}`, {
+    method: 'POST',
+    body: formData
+  });
+
   if (!res.ok) {
-    throw new Error(`Failed to fetch runs (${res.status})`);
+    throw new Error(`Upload failed (${res.status})`);
   }
-  const body = (await res.json()) as { items: RunRecord[] };
-  return body.items;
+
+  return res.json();
 }
 
-export async function fetchApiArtifacts(runId: string): Promise<ArtifactRecord[]> {
-  if (!baseUrl) return [];
-  const res = await fetch(`${baseUrl}/runs/${runId}/artifacts`);
-  if (!res.ok) {
-    throw new Error(`Failed to fetch artifacts (${res.status})`);
-  }
-  const body = (await res.json()) as {
-    items: Array<{ id: string; run_id?: string; runId?: string; kind: string; payload: unknown; created_at: string }>;
-  };
-  return body.items.map(item => ({
-    id: item.id,
-    runId: item.runId ?? item.run_id ?? runId,
-    kind: item.kind,
-    payload: (item.payload as Record<string, unknown>) ?? {},
-    createdAt: item.created_at
-  }));
-}
+// ===== HEALTH =====
 
-export async function ingestKnowledge(workflowId: string, documents: Array<{ id?: string; text: string; metadata?: object }>) {
-  if (!baseUrl) return { ingested: 0 };
-  return postJSON<{ ingested: number }>(`/knowledge`, { workflowId, documents });
+export async function healthCheck(): Promise<{ status: string; service: string }> {
+  return fetchJSON<{ status: string; service: string }>('/health');
 }

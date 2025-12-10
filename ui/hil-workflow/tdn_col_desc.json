@@ -1,0 +1,166 @@
+{
+  "actuals": {
+    "description": "Recorded actual hours and related metadata for work items.",
+    "columns": {
+      "org_subunit": "Organizational subunit code for the team that logged hours.",
+      "location": "Work location associated with the logged hours entry.",
+      "hours": "Numeric measure of hours logged.",
+      "pid": "Project identifier associated with the hours entry.",
+      "project_name": "Human-readable project label tied to the hours entry.",
+      "period": "Date or datetime representing when the hours were logged.",
+      "org_unit": "Higher-level organizational unit associated with the entry.",
+      "product_line": "Product line grouping for the work item.",
+      "product_group": "Product group classification for the work item.",
+      "year": "Calendar year extracted/stored for the entry.",
+      "product_segment": "Product segment classification for the work item.",
+      "type_of_hours": "Category of hours (e.g., actuals vs. other types)."
+    }
+  },
+  "plan_demand": {
+    "description": "Planned or forecasted hours and project metadata.",
+    "columns": {
+      "pid": "Project identifier for planned demand.",
+      "project_name": "Name of the project for which hours are planned.",
+      "product_line": "Product line grouping for the planned item.",
+      "product_segment": "Product segment classification for the planned item.",
+      "org_unit": "Organizational unit associated with the plan.",
+      "org_subunit": "Organizational subunit associated with the plan.",
+      "cost_type": "Type of cost represented (e.g., hours).",
+      "comment": "Free-form notes or descriptions for the plan entry.",
+      "project_type": "General category of the project.",
+      "project_subtype": "More specific subtype of the project.",
+      "gdpep_process": "Process classification label.",
+      "current_aop": "Current plan or budget reference label.",
+      "ny_aop": "Next-year plan or budget reference label.",
+      "project_status": "Status of the project in the planning context.",
+      "project_manager": "Contact or owner for the project.",
+      "tech_project_manager": "Technical contact or owner for the project.",
+      "cluster": "Grouping or cluster label for the project.",
+      "project_region": "Geographical region for the project.",
+      "customer_region": "Customer region tied to the project.",
+      "legacy_pid": "Legacy project identifier if applicable.",
+      "last_change_ts": "Timestamp of the last change to this plan entry.",
+      "changed_by": "User or system that last modified the entry.",
+      "hours": "Numeric measure of planned hours.",
+      "month": "Month (date/datetime) for which hours are planned.",
+      "location": "Location associated with the planned work."
+    }
+  },
+  "staff_capacity": {
+    "description": "Staffing capacity or allocation records, including planned hours.",
+    "columns": {
+      "staff_id": "Identifier for the staff member.",
+      "staff_name": "Name of the staff member.",
+      "product_line": "Product line associated with the capacity record.",
+      "product_segment": "Product segment associated with the capacity record.",
+      "org_unit": "Organizational unit for the staff allocation.",
+      "org_subunit": "Organizational subunit for the staff allocation.",
+      "cost_type": "Type of cost represented (e.g., hours).",
+      "comment": "Free-form notes for the capacity record.",
+      "project_type": "Type/category of work the staff is allocated to.",
+      "project_subtype": "Subtype for the allocation.",
+      "gdpep_process": "Process classification label.",
+      "current_aop": "Current plan or budget reference label.",
+      "ny_aop": "Next-year plan or budget reference label.",
+      "project_status": "Status of the associated project or allocation.",
+      "project_manager": "Project manager for the allocation context.",
+      "tech_project_manager": "Technical project manager for the allocation context.",
+      "cluster": "Grouping or cluster label for the allocation.",
+      "project_region": "Geographical region for the allocation.",
+      "customer_region": "Customer region for the allocation.",
+      "legacy_pid": "Legacy project identifier associated with the allocation.",
+      "last_change_ts": "Timestamp of the last change to the record.",
+      "changed_by": "User or system that last modified the record.",
+      "hours": "Numeric measure of capacity or allocated hours.",
+      "month": "Month (date/datetime) for which capacity is recorded.",
+      "location": "Location associated with the staff allocation."
+    }
+  },
+  "cost_factor": {
+    "description": "Reference table for cost factors by location and year.",
+    "columns": {
+      "location": "Location for which the cost factor applies.",
+      "cvs_2025": "Cost factor for year 2025.",
+      "cvs_2026_est": "Estimated cost factor for year 2026.",
+      "confirmed_flag": "Boolean indicating whether the factor is confirmed."
+    }
+  },
+  "plan_scenarios": {
+    "description": "Stored planning scenarios including payloads and status.",
+    "columns": {
+      "scenario_id": "Identifier for the scenario.",
+      "user_id": "User who created or owns the scenario.",
+      "created_at": "Creation timestamp of the scenario.",
+      "scope": "Scope description for the scenario.",
+      "baseline_metrics": "Serialized metrics used as baseline.",
+      "payload": "Serialized scenario payload.",
+      "status": "Lifecycle status of the scenario."
+    }
+  },
+  "staff_scenarios": {
+    "description": "Staffing-related scenarios with serialized payloads.",
+    "columns": {
+      "scenario_id": "Identifier for the scenario.",
+      "user_id": "User who created or owns the scenario.",
+      "created_at": "Creation timestamp of the scenario.",
+      "payload": "Serialized scenario payload.",
+      "status": "Lifecycle status of the scenario."
+    }
+  },
+  "budget_scenarios": {
+    "description": "Budget scenarios with serialized payloads.",
+    "columns": {
+      "scenario_id": "Identifier for the scenario.",
+      "user_id": "User who created or owns the scenario.",
+      "created_at": "Creation timestamp of the scenario.",
+      "payload": "Serialized scenario payload.",
+      "status": "Lifecycle status of the scenario."
+    }
+  },
+  "scenario_approvals": {
+    "description": "Approval records for scenarios.",
+    "columns": {
+      "approval_id": "Identifier for the approval record.",
+      "scenario_id": "Scenario identifier this approval refers to.",
+      "created_at": "Creation timestamp of the approval request.",
+      "status": "Approval status.",
+      "payload": "Serialized approval payload or notes.",
+      "requester": "Requester of the approval.",
+      "approver": "Approver of the scenario.",
+      "approved_at": "Timestamp when approval was given, if applicable.",
+      "comment": "Free-form comment on the approval."
+    }
+  },
+  "scenario_variants": {
+    "description": "Variants of scenarios with metadata and payloads.",
+    "columns": {
+      "scenario_id": "Identifier for the scenario variant.",
+      "parent_id": "Identifier of the parent scenario, if any.",
+      "label": "Human-readable label for the variant.",
+      "status": "Lifecycle status of the variant.",
+      "strategy": "Strategy description for the variant.",
+      "user_id": "User who created the variant.",
+      "created_at": "Creation timestamp of the variant.",
+      "notes": "Notes about the variant.",
+      "metrics_summary": "Serialized summary of metrics.",
+      "baseline_metrics": "Serialized baseline metrics."
+    }
+  },
+  "scenario_history": {
+    "description": "History of scenario interactions and logs.",
+    "columns": {
+      "id": "Primary key for the history record.",
+      "scenario_id": "Scenario identifier this history belongs to.",
+      "timestamp": "Timestamp of the history event.",
+      "question": "Question or prompt associated with the event.",
+      "status": "Status at the time of the event.",
+      "message": "Message content captured for the event.",
+      "deltas": "Serialized changes captured in the event.",
+      "warnings": "Serialized warnings recorded during the event.",
+      "analysis": "Serialized analysis content.",
+      "assumptions": "Serialized assumptions content.",
+      "fallback_plan": "Serialized fallback plan content.",
+      "approval_notes": "Serialized approval notes content."
+    }
+  }
+}

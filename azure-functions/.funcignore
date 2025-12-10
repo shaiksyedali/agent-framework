@@ -1,0 +1,36 @@
+# Azure Functions ignore file
+# Prevents local development files from being deployed
+
+# Local virtual environment (CRITICAL - causes dependency conflicts)
+.venv/
+venv/
+.python_packages/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+
+# Local settings (contains secrets)
+local.settings.json
+
+# Git
+.git/
+.gitignore
+
+# Tests
+tests/
+*_test.py
+test_*.py
+
+# Documentation
+*.md
+docs/
+
+# Misc
+.DS_Store
+*.log

@@ -1,0 +1,20 @@
+# FastAPI and dependencies
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Pydantic for data validation
+pydantic==2.5.3
+
+# Azure SDK
+azure-ai-agents==1.2.0b5
+azure-identity==1.15.0
+
+# Agent framework (local package)
+# Install via: pip install -e ../core
+
+# Database
+aiosqlite==0.19.0
+
+# Utilities
+python-dotenv==1.0.0

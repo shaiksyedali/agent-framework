@@ -1,0 +1,2330 @@
+{
+  "_meta": {
+    "generated_at": "2025-11-09T07:51:38.990853+00:00",
+    "metric_families": {
+      "coolant_loop": {
+        "aliases": [
+          "cooling_system"
+        ],
+        "description": "Correlate coolant temperatures around the inverter and e-motor to verify thermal loop performance.",
+        "domains": [
+          "thermal"
+        ],
+        "members": [
+          {
+            "column": "HYB5a_TempCoolantEM",
+            "role": "motor_coolant",
+            "table": "ev_signals"
+          },
+          {
+            "column": "INV4a_TempCoolantInv",
+            "role": "inverter_coolant",
+            "table": "ev_signals"
+          }
+        ]
+      },
+      "duty_cycle_profile": {
+        "description": "Classify trips (urban/mixed/highway) using sustained speed, torque stability, and duration.",
+        "domains": [
+          "duty_cycle"
+        ],
+        "members": [
+          {
+            "column": "avg_speed",
+            "role": "speed",
+            "table": "trip_segments"
+          },
+          {
+            "column": "trip_duration_min",
+            "role": "duration",
+            "table": "trip_segments"
+          },
+          {
+            "column": "avg_torque_error",
+            "role": "stability",
+            "table": "trip_segments"
+          }
+        ]
+      },
+      "efficiency_profile": {
+        "aliases": [
+          "drive_efficiency"
+        ],
+        "description": "Track conversion efficiency trends and degradation indicators across duty cycles.",
+        "domains": [
+          "powertrain",
+          "duty_cycle"
+        ],
+        "members": [
+          {
+            "column": "Efficiency__",
+            "role": "instantaneous",
+            "table": "ev_signals"
+          },
+          {
+            "column": "Efficiency_RollingMean_10s",
+            "role": "smoothed",
+            "table": "ev_signals"
+          },
+          {
+            "column": "EcoIndex",
+            "role": "behaviour",
+            "table": "ev_signals"
+          }
+        ]
+      },
+      "power_delivery": {
+        "description": "Evaluate electrical input vs mechanical output along with electrical stress indicators.",
+        "domains": [
+          "powertrain",
+          "electrical"
+        ],
+        "members": [
+          {
+            "column": "InputPower_kW",
+            "role": "electrical_input",
+            "table": "ev_signals"
+          },
+          {
+            "column": "OutputPower_kW",
+            "role": "mechanical_output",
+            "table": "ev_signals"
+          },
+          {
+            "column": "CurrentRipple_A",
+            "role": "ripple",
+            "table": "ev_signals"
+          },
+          {
+            "column": "VoltageSag_V_per_kW",
+            "role": "voltage_sag",
+            "table": "ev_signals"
+          }
+        ]
+      },
+      "sensor_health": {
+        "description": "Derived health readiness combining efficiency, torque spikes, thermal shocks, and power-quality stability.",
+        "domains": [
+          "diagnostics"
+        ],
+        "members": [
+          {
+            "column": "DerivedHealthScore",
+            "role": "score",
+            "table": "virtual"
+          },
+          {
+            "column": "Efficiency__",
+            "role": "efficiency",
+            "table": "ev_signals"
+          },
+          {
+            "column": "TorqueError_Nm",
+            "role": "torque",
+            "table": "ev_signals"
+          },
+          {
+            "column": "ThermalShock_Events_IGBT",
+            "role": "thermal_igbt",
+            "table": "ev_signals"
+          },
+          {
+            "column": "ThermalShock_Events_Stator",
+            "role": "thermal_stator",
+            "table": "ev_signals"
+          },
+          {
+            "column": "PowerQuality_Flag",
+            "role": "power_quality",
+            "table": "ev_signals"
+          }
+        ]
+      },
+      "thermal_envelope": {
+        "aliases": [
+          "thermal_stack"
+        ],
+        "description": "Monitor inverter, stator, rotor, and DC bus temperatures to detect thermal stress and derating.",
+        "domains": [
+          "thermal"
+        ],
+        "members": [
+          {
+            "column": "INV4a_TempInv_IGBT",
+            "role": "inverter",
+            "table": "ev_signals"
+          },
+          {
+            "column": "INV4a_TempEM_Stator1",
+            "role": "stator",
+            "table": "ev_signals"
+          },
+          {
+            "column": "INV4a_TempEM_Rotor",
+            "role": "rotor",
+            "table": "ev_signals"
+          },
+          {
+            "column": "INV4a_TempDCBus",
+            "role": "dc_bus",
+            "table": "ev_signals"
+          }
+        ]
+      },
+      "torque_balance": {
+        "aliases": [
+          "torque_alignment",
+          "drive_response"
+        ],
+        "description": "Compare commanded vs delivered torque to quantify drivetrain sluggishness or control saturation.",
+        "domains": [
+          "powertrain"
+        ],
+        "members": [
+          {
+            "column": "HYB1a_EMTorqueRequest",
+            "role": "commanded",
+            "table": "ev_signals"
+          },
+          {
+            "column": "INV1a_EMTorqueIndication",
+            "role": "delivered",
+            "table": "ev_signals"
+          },
+          {
+            "column": "TorqueError_Nm",
+            "role": "residual",
+            "table": "ev_signals"
+          },
+          {
+            "column": "avg_torque_error",
+            "role": "trip_avg",
+            "table": "trip_segments"
+          }
+        ]
+      }
+    }
+  },
+  "ev_signals": {
+    "grain": "vehicle-timestamp",
+    "metrics": {
+      "ActualEnginePercentTorque": {
+        "category": "electrical",
+        "description": "Torque measurement derived from inverter and motor control data (Nm).",
+        "friendly_name": "Torque measurement derived from inverter and motor control data (Nm)",
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Torque measurement derived from inverter and motor control data (Nm).",
+        "unit": "Nm",
+        "valid_range": [
+          -1000.0,
+          1000.0
+        ]
+      },
+      "Altitude": {
+        "category": "general",
+        "description": "Estimated altitude above sea level derived from the GNSS receiver.",
+        "friendly_name": "Estimated altitude above sea level derived from the GNSS receiver",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Estimated altitude above sea level derived from the GNSS receiver.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "CurrentRipple_A": {
+        "category": "electrical",
+        "description": "Electrical current measurement associated with the vehicle system.",
+        "domain_notes": [
+          "High ripple stresses capacitors and inductors; typically correlates with inverter switching or filter issues."
+        ],
+        "families": [
+          "power_delivery"
+        ],
+        "friendly_name": "Electrical current measurement associated with the vehicle system",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": null,
+          "description": "Average current ripple magnitude across inverter phases.",
+          "display_name": "Current ripple",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.InputPower_kW",
+          "ev_signals.OutputPower_kW",
+          "ev_signals.VoltageSag_V_per_kW"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Electrical current measurement associated with the vehicle system. High ripple stresses capacitors and inductors; typically correlates with inverter switching or filter issues.",
+        "thresholds": {
+          "critical": 25,
+          "description": "Current ripple thresholds",
+          "unit": "A",
+          "warning": 15
+        },
+        "unit": "A",
+        "valid_range": [
+          -800.0,
+          800.0
+        ]
+      },
+      "CurrentVolatility_A": {
+        "category": "electrical",
+        "description": "Electrical current measurement associated with the vehicle system.",
+        "friendly_name": "Electrical current measurement associated with the vehicle system",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "avg_current_volatility"
+          ],
+          "description": "Average absolute change in phase current over short windows.",
+          "display_name": "Current volatility",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Electrical current measurement associated with the vehicle system.",
+        "unit": "A",
+        "valid_range": [
+          -800.0,
+          800.0
+        ]
+      },
+      "Date": {
+        "category": "temporal",
+        "description": "Calendar date associated with the telemetry sample.",
+        "friendly_name": "Calendar date associated with the telemetry sample",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Calendar date associated with the telemetry sample.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "DeltaT_Inverter_C": {
+        "category": "general",
+        "description": "Telemetry feature DeltaT_Inverter_C captured from the vehicle system.",
+        "friendly_name": "Telemetry feature DeltaT_Inverter_C captured from the vehicle system",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature DeltaT_Inverter_C captured from the vehicle system.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "DeltaT_Motor_C": {
+        "category": "general",
+        "description": "Telemetry feature DeltaT_Motor_C captured from the electric motor.",
+        "friendly_name": "Telemetry feature DeltaT_Motor_C captured from the electric motor",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature DeltaT_Motor_C captured from the electric motor.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "DrivingStyle": {
+        "category": "general",
+        "description": "Telemetry feature DrivingStyle captured from the vehicle system.",
+        "friendly_name": "Telemetry feature DrivingStyle captured from the vehicle system",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature DrivingStyle captured from the vehicle system.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "EcoIndex": {
+        "category": "diagnostics",
+        "description": "Eco-driving index combining energy efficiency and driving behaviour metrics.",
+        "families": [
+          "efficiency_profile"
+        ],
+        "friendly_name": "Eco-driving index combining energy efficiency and driving behaviour metrics",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "eco_score"
+          ],
+          "description": "Composite eco-driving score blending efficiency and behaviour signals.",
+          "display_name": "Eco driving index",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.Efficiency_RollingMean_10s",
+          "ev_signals.Efficiency__"
+        ],
+        "preferred_aggregations": [
+          "sum",
+          "max"
+        ],
+        "relationships": [],
+        "technician_note": "Eco-driving index combining energy efficiency and driving behaviour metrics.",
+        "unit": null,
+        "valid_range": [
+          0,
+          1
+        ]
+      },
+      "Efficiency_Degradation_Flag": {
+        "category": "powertrain",
+        "description": "Drive system efficiency calculated as mechanical output over electrical input (percentage).",
+        "families": [
+          "sensor_health"
+        ],
+        "friendly_name": "Drive system efficiency calculated as mechanical output over electrical input (percentage)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "efficiency_degradation_flag"
+          ],
+          "description": "Fraction of samples where efficiency degradation flag was raised.",
+          "display_name": "Efficiency degradation flag",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.SystemHealthScore"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Drive system efficiency calculated as mechanical output over electrical input (percentage).",
+        "unit": "%",
+        "valid_range": [
+          0.0,
+          100.0
+        ]
+      },
+      "Efficiency_RollingMean_10s": {
+        "category": "powertrain",
+        "description": "Drive system efficiency calculated as mechanical output over electrical input (percentage).",
+        "families": [
+          "efficiency_profile"
+        ],
+        "friendly_name": "Drive system efficiency calculated as mechanical output over electrical input (percentage)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "efficiency_rolling_mean"
+          ],
+          "description": "Average 10-second rolling mean efficiency.",
+          "display_name": "Efficiency rolling mean",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.EcoIndex",
+          "ev_signals.Efficiency__"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Drive system efficiency calculated as mechanical output over electrical input (percentage).",
+        "unit": "%",
+        "valid_range": [
+          0.0,
+          100.0
+        ]
+      },
+      "Efficiency_Volatility_10s": {
+        "category": "powertrain",
+        "description": "Drive system efficiency calculated as mechanical output over electrical input (percentage).",
+        "friendly_name": "Drive system efficiency calculated as mechanical output over electrical input (percentage)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "efficiency_volatility_10s"
+          ],
+          "description": "Average 10-second rolling volatility of drive efficiency.",
+          "display_name": "Efficiency volatility",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Drive system efficiency calculated as mechanical output over electrical input (percentage).",
+        "unit": "%",
+        "valid_range": [
+          0.0,
+          100.0
+        ]
+      },
+      "Efficiency__": {
+        "category": "powertrain",
+        "description": "Overall drivetrain efficiency expressed as the ratio of output power to input power (percentage).",
+        "domain_notes": [
+          "High efficiency indicates minimal conversion losses; investigate cooling or calibration if efficiency trends degrade.",
+          "Pair with torque error to understand whether poor efficiency is linked to mechanical drag or electrical losses."
+        ],
+        "families": [
+          "efficiency_profile"
+        ],
+        "friendly_name": "Overall drivetrain efficiency expressed as the ratio of output power to input power (percentage)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "avg_efficiency_pct"
+          ],
+          "description": "Ratio of output power to input power derived from raw telemetry.",
+          "display_name": "Drive efficiency",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.EcoIndex",
+          "ev_signals.Efficiency_RollingMean_10s"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [
+          "OutputPower_kW",
+          "InputPower_kW"
+        ],
+        "technician_note": "Overall drivetrain efficiency expressed as the ratio of output power to input power (percentage). High efficiency indicates minimal conversion losses; investigate cooling or calibration if efficiency trends degrade. Pair with torque error to understand whether poor efficiency is linked to mechanical drag or electrical losses.",
+        "thresholds": {
+          "critical": 85,
+          "description": "Drive efficiency thresholds (percentage)",
+          "unit": "%",
+          "warning": 90
+        },
+        "unit": "%",
+        "valid_range": [
+          0.0,
+          100.0
+        ]
+      },
+      "EngineSpeed": {
+        "category": "powertrain",
+        "description": "EngineSpeed measured from the vehicle system (rpm).",
+        "friendly_name": "EngineSpeed measured from the vehicle system (rpm)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "motor_speed"
+          ],
+          "description": "Average motor speed during the window.",
+          "display_name": "Motor speed",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "EngineSpeed measured from the vehicle system (rpm).",
+        "unit": "rpm",
+        "valid_range": [
+          0.0,
+          12000.0
+        ]
+      },
+      "ExcessiveCurrentRipple_Events": {
+        "category": "electrical",
+        "description": "Electrical current measurement associated with the vehicle system.",
+        "friendly_name": "Electrical current measurement associated with the vehicle system",
+        "metric": {
+          "aggregation": "SUM",
+          "aliases": [
+            "ripple_events"
+          ],
+          "description": "Occurrences where current ripple exceeded defined thresholds.",
+          "display_name": "Excessive current ripple events",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Electrical current measurement associated with the vehicle system.",
+        "unit": "A",
+        "valid_range": [
+          -800.0,
+          800.0
+        ]
+      },
+      "FrontAxleSpeed": {
+        "category": "powertrain",
+        "description": "Front axle rotational speed used to infer vehicle road speed.",
+        "friendly_name": "Front axle rotational speed used to infer vehicle road speed",
+        "metric": {
+          "aggregation": "SUM_DISTANCE",
+          "aliases": [
+            "distance_km",
+            "total_distance"
+          ],
+          "description": "Distance estimate derived from front axle speed and telemetry cadence.",
+          "display_name": "Distance travelled",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Front axle rotational speed used to infer vehicle road speed.",
+        "unit": "rpm",
+        "valid_range": [
+          0.0,
+          12000.0
+        ]
+      },
+      "GPS_Day": {
+        "category": "location",
+        "description": "Telemetry feature GPS_Day captured from the GPS subsystem.",
+        "friendly_name": "Telemetry feature GPS_Day captured from the GPS subsystem",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature GPS_Day captured from the GPS subsystem.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "GPS_Hour": {
+        "category": "location",
+        "description": "Telemetry feature GPS_Hour captured from the GPS subsystem.",
+        "friendly_name": "Telemetry feature GPS_Hour captured from the GPS subsystem",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature GPS_Hour captured from the GPS subsystem.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "GPS_Minute": {
+        "category": "location",
+        "description": "Telemetry feature GPS_Minute captured from the GPS subsystem.",
+        "friendly_name": "Telemetry feature GPS_Minute captured from the GPS subsystem",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature GPS_Minute captured from the GPS subsystem.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "GPS_Month": {
+        "category": "location",
+        "description": "Telemetry feature GPS_Month captured from the GPS subsystem.",
+        "friendly_name": "Telemetry feature GPS_Month captured from the GPS subsystem",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature GPS_Month captured from the GPS subsystem.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "GPS_Second": {
+        "category": "location",
+        "description": "Telemetry feature GPS_Second captured from the GPS subsystem.",
+        "friendly_name": "Telemetry feature GPS_Second captured from the GPS subsystem",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature GPS_Second captured from the GPS subsystem.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "GPS_Year": {
+        "category": "location",
+        "description": "Telemetry feature GPS_Year captured from the GPS subsystem.",
+        "friendly_name": "Telemetry feature GPS_Year captured from the GPS subsystem",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature GPS_Year captured from the GPS subsystem.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "HYB1a_EMTorqueRequest": {
+        "category": "powertrain",
+        "description": "Torque measurement derived from inverter and motor control data (Nm).",
+        "domain_notes": [
+          "Controller torque request; compare against delivered torque to validate control response."
+        ],
+        "families": [
+          "torque_balance"
+        ],
+        "friendly_name": "Torque measurement derived from inverter and motor control data (Nm)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "torque_request_nm"
+          ],
+          "description": "Average driver/controller requested torque.",
+          "display_name": "Requested torque",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.INV1a_EMTorqueIndication",
+          "ev_signals.TorqueError_Nm",
+          "trip_segments.avg_torque_error"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Torque measurement derived from inverter and motor control data (Nm). Controller torque request; compare against delivered torque to validate control response.",
+        "unit": "Nm",
+        "valid_range": [
+          -1000.0,
+          1000.0
+        ]
+      },
+      "HYB5a_TempCoolantEM": {
+        "category": "thermal",
+        "description": "Temperature of the vehicle system measured by embedded sensors (°C).",
+        "families": [
+          "coolant_loop"
+        ],
+        "friendly_name": "Temperature of the vehicle system measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "MAX",
+          "aliases": null,
+          "description": "Maximum coolant temperature across the analysis window.",
+          "display_name": "Coolant temperature",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.INV4a_TempCoolantInv"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the vehicle system measured by embedded sensors (°C).",
+        "thresholds": {
+          "critical": 85,
+          "description": "Coolant temperature thresholds",
+          "unit": "°C",
+          "warning": 70
+        },
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "HighTorqueError_Events": {
+        "category": "powertrain",
+        "description": "Torque measurement derived from inverter and motor control data (Nm).",
+        "friendly_name": "Torque measurement derived from inverter and motor control data (Nm)",
+        "metric": {
+          "aggregation": "SUM",
+          "aliases": [
+            "torque_events"
+          ],
+          "description": "Count of high torque error events within the window.",
+          "display_name": "High torque error events",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Torque measurement derived from inverter and motor control data (Nm).",
+        "unit": "Nm",
+        "valid_range": [
+          -1000.0,
+          1000.0
+        ]
+      },
+      "INV1a_EMCurrentDcLinkIndication": {
+        "category": "electrical",
+        "description": "Electrical current measurement associated with the inverter.",
+        "friendly_name": "Electrical current measurement associated with the inverter",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "dc_link_current_avg",
+            "dc_current"
+          ],
+          "description": "Average DC link current supplied to the inverter.",
+          "display_name": "DC link current",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [
+          "INV1a_EMVoltageDcLinkIndication",
+          "InputPower_kW"
+        ],
+        "technician_note": "Electrical current measurement associated with the inverter.",
+        "unit": "A",
+        "valid_range": [
+          -800.0,
+          800.0
+        ]
+      },
+      "INV1a_EMTorqueIndication": {
+        "category": "powertrain",
+        "description": "Torque measurement derived from inverter and motor control data (Nm).",
+        "domain_notes": [
+          "Delivered torque measured by the inverter; use with torque error to diagnose response lag or saturation."
+        ],
+        "families": [
+          "torque_balance"
+        ],
+        "friendly_name": "Torque measurement derived from inverter and motor control data (Nm)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "torque_actual"
+          ],
+          "description": "Average torque delivered by the motor.",
+          "display_name": "Delivered torque",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.HYB1a_EMTorqueRequest",
+          "ev_signals.TorqueError_Nm",
+          "trip_segments.avg_torque_error"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [
+          "EngineSpeed",
+          "OutputPower_kW"
+        ],
+        "technician_note": "Torque measurement derived from inverter and motor control data (Nm). Delivered torque measured by the inverter; use with torque error to diagnose response lag or saturation.",
+        "unit": "Nm",
+        "valid_range": [
+          -1000.0,
+          1000.0
+        ]
+      },
+      "INV1a_EMVoltageDcLinkIndication": {
+        "category": "electrical",
+        "description": "Electrical voltage measurement associated with the inverter.",
+        "friendly_name": "Electrical voltage measurement associated with the inverter",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "dc_link_voltage_avg",
+            "dc_voltage"
+          ],
+          "description": "Average DC link voltage measured at the inverter.",
+          "display_name": "DC link voltage",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [
+          "INV1a_EMCurrentDcLinkIndication",
+          "InputPower_kW"
+        ],
+        "technician_note": "Electrical voltage measurement associated with the inverter.",
+        "unit": "V",
+        "valid_range": [
+          0.0,
+          1000.0
+        ]
+      },
+      "INV2a_EMOperatingModeIndication": {
+        "category": "general",
+        "description": "Telemetry feature INV2a_EMOperatingModeIndication captured from the inverter.",
+        "friendly_name": "Telemetry feature INV2a_EMOperatingModeIndication captured from the inverter",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature INV2a_EMOperatingModeIndication captured from the inverter.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "INV3a_PhaseCurrent": {
+        "category": "electrical",
+        "description": "Electrical current measurement associated with the inverter.",
+        "friendly_name": "Electrical current measurement associated with the inverter",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "motor_phase_current"
+          ],
+          "description": "Average inverter phase current delivered to the motor.",
+          "display_name": "Phase current",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Electrical current measurement associated with the inverter.",
+        "unit": "A",
+        "valid_range": [
+          -800.0,
+          800.0
+        ]
+      },
+      "INV4a_TempCoolantInv": {
+        "category": "thermal",
+        "description": "Temperature of the inverter measured by embedded sensors (°C).",
+        "families": [
+          "coolant_loop"
+        ],
+        "friendly_name": "Temperature of the inverter measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "MAX",
+          "aliases": [
+            "coolant_inv_temp",
+            "inverter_coolant"
+          ],
+          "description": "Peak inverter coolant temperature during the analysis window.",
+          "display_name": "Inverter coolant temperature",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.HYB5a_TempCoolantEM"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the inverter measured by embedded sensors (°C).",
+        "thresholds": {
+          "critical": 85,
+          "description": "Coolant temperature thresholds",
+          "unit": "°C",
+          "warning": 70
+        },
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "INV4a_TempDCBus": {
+        "category": "thermal",
+        "description": "Temperature of the inverter measured by embedded sensors (°C).",
+        "families": [
+          "thermal_envelope"
+        ],
+        "friendly_name": "Temperature of the inverter measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "MAX",
+          "aliases": [
+            "dc_bus_temperature"
+          ],
+          "description": "Highest measured DC bus temperature, highlighting power electronics stress.",
+          "display_name": "DC bus temperature",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.INV4a_TempEM_Rotor",
+          "ev_signals.INV4a_TempEM_Stator1",
+          "ev_signals.INV4a_TempInv_IGBT"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the inverter measured by embedded sensors (°C).",
+        "thresholds": {
+          "critical": 140,
+          "description": "Inverter IGBT junction temperature thresholds",
+          "unit": "°C",
+          "warning": 120
+        },
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "INV4a_TempEM_Rotor": {
+        "category": "thermal",
+        "description": "Temperature of the inverter measured by embedded sensors (°C).",
+        "domain_notes": [
+          "Rotor temperature gives insight into mechanical load and cooling effectiveness."
+        ],
+        "families": [
+          "thermal_envelope"
+        ],
+        "friendly_name": "Temperature of the inverter measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "MAX",
+          "aliases": null,
+          "description": "Peak rotor temperature.",
+          "display_name": "Motor rotor temperature",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.INV4a_TempDCBus",
+          "ev_signals.INV4a_TempEM_Stator1",
+          "ev_signals.INV4a_TempInv_IGBT"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the inverter measured by embedded sensors (°C). Rotor temperature gives insight into mechanical load and cooling effectiveness.",
+        "thresholds": {
+          "critical": 135,
+          "description": "Motor rotor temperature thresholds",
+          "unit": "°C",
+          "warning": 120
+        },
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "INV4a_TempEM_Stator1": {
+        "category": "thermal",
+        "description": "Temperature of the inverter measured by embedded sensors (°C).",
+        "domain_notes": [
+          "Motor stator hotspot temperature; prolonged elevations accelerate insulation aging."
+        ],
+        "families": [
+          "thermal_envelope"
+        ],
+        "friendly_name": "Temperature of the inverter measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "MAX",
+          "aliases": [
+            "INV4a_TempEM_Stator2"
+          ],
+          "description": "Peak stator temperature.",
+          "display_name": "Motor stator temperature",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.INV4a_TempDCBus",
+          "ev_signals.INV4a_TempEM_Rotor",
+          "ev_signals.INV4a_TempInv_IGBT"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the inverter measured by embedded sensors (°C). Motor stator hotspot temperature; prolonged elevations accelerate insulation aging.",
+        "thresholds": {
+          "critical": 140,
+          "description": "Motor stator temperature thresholds",
+          "unit": "°C",
+          "warning": 125
+        },
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "INV4a_TempEM_Stator2": {
+        "category": "thermal",
+        "description": "Temperature of the inverter measured by embedded sensors (°C).",
+        "friendly_name": "Temperature of the inverter measured by embedded sensors (°C)",
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the inverter measured by embedded sensors (°C).",
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "INV4a_TempInv_IGBT": {
+        "category": "thermal",
+        "description": "Temperature of the inverter measured by embedded sensors (°C).",
+        "domain_notes": [
+          "Critical thermal indicator for inverter power modules; monitor peaks against derating thresholds."
+        ],
+        "families": [
+          "thermal_envelope"
+        ],
+        "friendly_name": "Temperature of the inverter measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "MAX",
+          "aliases": null,
+          "description": "Peak inverter IGBT temperature within the scope window.",
+          "display_name": "Inverter IGBT temperature",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.INV4a_TempDCBus",
+          "ev_signals.INV4a_TempEM_Rotor",
+          "ev_signals.INV4a_TempEM_Stator1"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the inverter measured by embedded sensors (°C). Critical thermal indicator for inverter power modules; monitor peaks against derating thresholds.",
+        "thresholds": {
+          "critical": 140,
+          "description": "Inverter IGBT junction temperature thresholds",
+          "unit": "°C",
+          "warning": 120
+        },
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "InputPower_kW": {
+        "category": "powertrain",
+        "description": "Electrical input power delivered to the inverter DC link (kW).",
+        "domain_notes": [
+          "Electrical power drawn by the drive system; contrast with output power to evaluate converter efficiency."
+        ],
+        "families": [
+          "power_delivery"
+        ],
+        "friendly_name": "Electrical input power delivered to the inverter DC link (kW)",
+        "metric": {
+          "aggregation": "ENERGY_PER_KM",
+          "aliases": [
+            "consumption_per_km",
+            "energy_intensity"
+          ],
+          "description": "Energy consumption normalized by distance derived from telemetry.",
+          "display_name": "Energy per kilometer",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.CurrentRipple_A",
+          "ev_signals.OutputPower_kW",
+          "ev_signals.VoltageSag_V_per_kW"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [
+          "INV1a_EMVoltageDcLinkIndication",
+          "INV1a_EMCurrentDcLinkIndication"
+        ],
+        "technician_note": "Electrical input power delivered to the inverter DC link (kW). Electrical power drawn by the drive system; contrast with output power to evaluate converter efficiency.",
+        "unit": "kW",
+        "valid_range": [
+          0.0,
+          400.0
+        ]
+      },
+      "Inverter_Rth_Proxy": {
+        "category": "general",
+        "description": "Telemetry feature Inverter_Rth_Proxy captured from the inverter.",
+        "friendly_name": "Telemetry feature Inverter_Rth_Proxy captured from the inverter",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature Inverter_Rth_Proxy captured from the inverter.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "Jerk_ms3": {
+        "category": "general",
+        "description": "Jerk_ms3 measured from the vehicle system (s).",
+        "friendly_name": "Jerk_ms3 measured from the vehicle system (s)",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Jerk_ms3 measured from the vehicle system (s).",
+        "unit": "s",
+        "valid_range": [
+          0.0,
+          null
+        ]
+      },
+      "Latitude": {
+        "category": "location",
+        "description": "Latitude coordinate from the GNSS receiver (positive north).",
+        "friendly_name": "Latitude coordinate from the GNSS receiver (positive north)",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Latitude coordinate from the GNSS receiver (positive north).",
+        "unit": "deg",
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "Longitude": {
+        "category": "location",
+        "description": "Longitude coordinate from the GNSS receiver (positive east).",
+        "friendly_name": "Longitude coordinate from the GNSS receiver (positive east)",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Longitude coordinate from the GNSS receiver (positive east).",
+        "unit": "deg",
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "Motor_Rth_Proxy": {
+        "category": "general",
+        "description": "Telemetry feature Motor_Rth_Proxy captured from the electric motor.",
+        "friendly_name": "Telemetry feature Motor_Rth_Proxy captured from the electric motor",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature Motor_Rth_Proxy captured from the electric motor.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "OutputPower_kW": {
+        "category": "powertrain",
+        "description": "Mechanical power delivered to the driveline (kW).",
+        "domain_notes": [
+          "Represents mechanical output from the inverter/motor; correlate with vehicle speed and torque to assess power delivery efficiency.",
+          "Compare against fleet baselines to flag under-performing power stages."
+        ],
+        "families": [
+          "power_delivery"
+        ],
+        "friendly_name": "Mechanical power delivered to the driveline (kW)",
+        "metric": {
+          "aggregation": "SUM_MECH_ENERGY",
+          "aliases": [
+            "mech_energy",
+            "output_energy"
+          ],
+          "description": "Mechanical energy output delivered to the drivetrain based on output power telemetry.",
+          "display_name": "Mechanical energy delivered",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.CurrentRipple_A",
+          "ev_signals.InputPower_kW",
+          "ev_signals.VoltageSag_V_per_kW"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [
+          "EngineSpeed",
+          "INV1a_EMTorqueIndication"
+        ],
+        "technician_note": "Mechanical power delivered to the driveline (kW). Represents mechanical output from the inverter/motor; correlate with vehicle speed and torque to assess power delivery efficiency. Compare against fleet baselines to flag under-performing power stages.",
+        "unit": "kW",
+        "valid_range": [
+          0.0,
+          400.0
+        ]
+      },
+      "PowerFluctuation_kW": {
+        "category": "powertrain",
+        "description": "PowerFluctuation_kW measured from the vehicle system (kW).",
+        "friendly_name": "PowerFluctuation_kW measured from the vehicle system (kW)",
+        "metric": {
+          "aggregation": "STDDEV",
+          "aliases": [
+            "power_fluctuation_std"
+          ],
+          "description": "Standard deviation of power fluctuation, highlighting driveline instability.",
+          "display_name": "Power fluctuation",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "PowerFluctuation_kW measured from the vehicle system (kW).",
+        "unit": "kW",
+        "valid_range": [
+          0.0,
+          400.0
+        ]
+      },
+      "PowerLoss_kW": {
+        "category": "powertrain",
+        "description": "PowerLoss_kW measured from the vehicle system (kW).",
+        "friendly_name": "PowerLoss_kW measured from the vehicle system (kW)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "avg_power_loss"
+          ],
+          "description": "Average inverter power loss (input - output).",
+          "display_name": "Average power loss",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "PowerLoss_kW measured from the vehicle system (kW).",
+        "unit": "kW",
+        "valid_range": [
+          0.0,
+          400.0
+        ]
+      },
+      "PowerQuality_Flag": {
+        "category": "powertrain",
+        "description": "Binary diagnostic flag derived from vehicle system telemetry.",
+        "friendly_name": "Binary diagnostic flag derived from vehicle system telemetry",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "power_quality_flag"
+          ],
+          "description": "Percentage of samples where power quality flag was asserted.",
+          "display_name": "Power quality flag",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Binary diagnostic flag derived from vehicle system telemetry.",
+        "unit": null,
+        "valid_range": [
+          0,
+          1
+        ]
+      },
+      "Satellites": {
+        "category": "general",
+        "description": "Telemetry feature Satellites captured from the vehicle system.",
+        "friendly_name": "Telemetry feature Satellites captured from the vehicle system",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature Satellites captured from the vehicle system.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "SystemHealthScore": {
+        "category": "diagnostics",
+        "description": "Aggregated health score derived from thermal, electrical, and powertrain diagnostics (0-1 scale).",
+        "families": [
+          "sensor_health"
+        ],
+        "friendly_name": "Aggregated health score derived from thermal, electrical, and powertrain diagnostics (0-1 scale)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "health_fraction",
+            "health_score"
+          ],
+          "description": "Normalized system health indicator (0-1).",
+          "display_name": "System health score",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.Efficiency_Degradation_Flag"
+        ],
+        "preferred_aggregations": [
+          "sum",
+          "max"
+        ],
+        "relationships": [],
+        "technician_note": "Aggregated health score derived from thermal, electrical, and powertrain diagnostics (0-1 scale).",
+        "unit": null,
+        "valid_range": [
+          0,
+          1
+        ]
+      },
+      "TempGradient_IGBT_C_per_s": {
+        "category": "thermal",
+        "description": "Temperature of the vehicle system measured by embedded sensors (°C).",
+        "friendly_name": "Temperature of the vehicle system measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "igbt_gradient"
+          ],
+          "description": "Average rate-of-change of inverter IGBT temperature, indicating thermal ramp rates.",
+          "display_name": "IGBT temperature gradient",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the vehicle system measured by embedded sensors (°C).",
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "TempGradient_Stator_C_per_s": {
+        "category": "thermal",
+        "description": "Temperature of the electric motor measured by embedded sensors (°C).",
+        "friendly_name": "Temperature of the electric motor measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "stator_gradient"
+          ],
+          "description": "Average stator temperature change per second.",
+          "display_name": "Stator temperature gradient",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the electric motor measured by embedded sensors (°C).",
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "TempStability_IGBT_5s": {
+        "category": "thermal",
+        "description": "Temperature of the vehicle system measured by embedded sensors (°C).",
+        "friendly_name": "Temperature of the vehicle system measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "igbt_temp_stability"
+          ],
+          "description": "Short-window stability metric for inverter switching temperature fluctuations.",
+          "display_name": "IGBT temperature stability",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the vehicle system measured by embedded sensors (°C).",
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "ThermalShock_Events_IGBT": {
+        "category": "thermal",
+        "description": "Count of detected events related to the vehicle system.",
+        "friendly_name": "Count of detected events related to the vehicle system",
+        "metric": {
+          "aggregation": "SUM",
+          "aliases": [
+            "igbt_shock_events"
+          ],
+          "description": "Count of inverter IGBT thermal shock events.",
+          "display_name": "Thermal shock events (IGBT)",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Count of detected events related to the vehicle system.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "ThermalShock_Events_Stator": {
+        "category": "thermal",
+        "description": "Count of detected events related to the electric motor.",
+        "friendly_name": "Count of detected events related to the electric motor",
+        "metric": {
+          "aggregation": "SUM",
+          "aliases": [
+            "stator_shock_events"
+          ],
+          "description": "Count of stator thermal shock detections within the time window.",
+          "display_name": "Stator thermal shock events",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Count of detected events related to the electric motor.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "Timestamp": {
+        "category": "temporal",
+        "description": "UTC timestamp for the sample captured from the vehicle telemetry stream.",
+        "friendly_name": "UTC timestamp for the sample captured from the vehicle telemetry stream",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "UTC timestamp for the sample captured from the vehicle telemetry stream.",
+        "unit": "s",
+        "valid_range": [
+          0.0,
+          null
+        ]
+      },
+      "Timestamp_file": {
+        "category": "temporal",
+        "description": "Timestamp_file measured from the vehicle system (s).",
+        "friendly_name": "Timestamp_file measured from the vehicle system (s)",
+        "preferred_aggregations": [
+          "latest"
+        ],
+        "relationships": [],
+        "technician_note": "Timestamp_file measured from the vehicle system (s).",
+        "unit": "s",
+        "valid_range": [
+          0.0,
+          null
+        ]
+      },
+      "TorqueError_Nm": {
+        "category": "powertrain",
+        "description": "Torque measurement derived from inverter and motor control data (Nm).",
+        "domain_notes": [
+          "Difference between requested and delivered torque; persistent positive error suggests the drivetrain cannot deliver commanded torque.",
+          "Cross-check with current ripple or thermal stress to isolate inverter vs mechanical causes."
+        ],
+        "families": [
+          "torque_balance"
+        ],
+        "friendly_name": "Torque measurement derived from inverter and motor control data (Nm)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": null,
+          "description": "Mean deviation between requested and delivered torque.",
+          "display_name": "Torque error",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.HYB1a_EMTorqueRequest",
+          "ev_signals.INV1a_EMTorqueIndication",
+          "trip_segments.avg_torque_error"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Torque measurement derived from inverter and motor control data (Nm). Difference between requested and delivered torque; persistent positive error suggests the drivetrain cannot deliver commanded torque. Cross-check with current ripple or thermal stress to isolate inverter vs mechanical causes.",
+        "thresholds": {
+          "critical": 120,
+          "description": "Torque error thresholds",
+          "unit": "Nm",
+          "warning": 60
+        },
+        "unit": "Nm",
+        "valid_range": [
+          -1000.0,
+          1000.0
+        ]
+      },
+      "TorqueError_RMS_30s": {
+        "category": "powertrain",
+        "description": "Torque measurement derived from inverter and motor control data (Nm).",
+        "friendly_name": "Torque measurement derived from inverter and motor control data (Nm)",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "torque_error_rms_30s"
+          ],
+          "description": "Root-mean-square torque deviation across 30 second windows.",
+          "display_name": "Torque error RMS",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Torque measurement derived from inverter and motor control data (Nm).",
+        "unit": "Nm",
+        "valid_range": [
+          -1000.0,
+          1000.0
+        ]
+      },
+      "TransmissionCurrentGear": {
+        "category": "electrical",
+        "description": "Electrical current measurement associated with the vehicle system.",
+        "friendly_name": "Electrical current measurement associated with the vehicle system",
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Electrical current measurement associated with the vehicle system.",
+        "unit": "A",
+        "valid_range": [
+          -800.0,
+          800.0
+        ]
+      },
+      "Valid_Fix": {
+        "category": "general",
+        "description": "Telemetry feature Valid_Fix captured from the vehicle system.",
+        "friendly_name": "Telemetry feature Valid_Fix captured from the vehicle system",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature Valid_Fix captured from the vehicle system.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "VehicleID": {
+        "category": "general",
+        "description": "Unique identifier for the vehicle within the fleet.",
+        "friendly_name": "Unique identifier for the vehicle within the fleet",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Unique identifier for the vehicle within the fleet.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "VoltageSag_V_per_kW": {
+        "category": "electrical",
+        "description": "Electrical voltage measurement associated with the vehicle system.",
+        "domain_notes": [
+          "Captures supply droop under load; excessive sag may indicate battery or DC link impedance problems."
+        ],
+        "families": [
+          "power_delivery"
+        ],
+        "friendly_name": "Electrical voltage measurement associated with the vehicle system",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": null,
+          "description": "Voltage drop per unit power, indicating electrical stability.",
+          "display_name": "Voltage sag",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "ev_signals.CurrentRipple_A",
+          "ev_signals.InputPower_kW",
+          "ev_signals.OutputPower_kW"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Electrical voltage measurement associated with the vehicle system. Captures supply droop under load; excessive sag may indicate battery or DC link impedance problems.",
+        "thresholds": {
+          "critical": 35,
+          "description": "Voltage sag thresholds",
+          "unit": "V",
+          "warning": 20
+        },
+        "unit": "V",
+        "valid_range": [
+          0.0,
+          1000.0
+        ]
+      },
+      "eOP_Idc_act": {
+        "category": "electrical",
+        "description": "Telemetry feature eOP_Idc_act captured from the power electronics.",
+        "friendly_name": "Telemetry feature eOP_Idc_act captured from the power electronics",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "dc_bus_i"
+          ],
+          "description": "Average DC bus current delivered to the inverter electronics.",
+          "display_name": "DC bus current",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature eOP_Idc_act captured from the power electronics.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "eOP_Spd_act": {
+        "category": "electrical",
+        "description": "Telemetry feature eOP_Spd_act captured from the power electronics.",
+        "friendly_name": "Telemetry feature eOP_Spd_act captured from the power electronics",
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature eOP_Spd_act captured from the power electronics.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "eOP_Spd_req": {
+        "category": "general",
+        "description": "Telemetry feature eOP_Spd_req captured from the vehicle system.",
+        "friendly_name": "Telemetry feature eOP_Spd_req captured from the vehicle system",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature eOP_Spd_req captured from the vehicle system.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "eOP_TempOil_act": {
+        "category": "thermal",
+        "description": "Temperature of the power electronics measured by embedded sensors (°C).",
+        "friendly_name": "Temperature of the power electronics measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "MAX",
+          "aliases": [
+            "temp_oil"
+          ],
+          "description": "Maximum measured temperature of inverter cooling oil.",
+          "display_name": "Power electronics oil temperature",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the power electronics measured by embedded sensors (°C).",
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "eOP_TempPCB_act": {
+        "category": "thermal",
+        "description": "Temperature of the power electronics measured by embedded sensors (°C).",
+        "friendly_name": "Temperature of the power electronics measured by embedded sensors (°C)",
+        "metric": {
+          "aggregation": "MAX",
+          "aliases": [
+            "temp_pcb"
+          ],
+          "description": "Peak inverter PCB temperature.",
+          "display_name": "Inverter PCB temperature",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "trend"
+        ],
+        "relationships": [],
+        "technician_note": "Temperature of the power electronics measured by embedded sensors (°C).",
+        "unit": "°C",
+        "valid_range": [
+          -40.0,
+          180.0
+        ]
+      },
+      "eOP_Vdc_act": {
+        "category": "electrical",
+        "description": "Telemetry feature eOP_Vdc_act captured from the power electronics.",
+        "friendly_name": "Telemetry feature eOP_Vdc_act captured from the power electronics",
+        "metric": {
+          "aggregation": "AVG",
+          "aliases": [
+            "dc_bus_v"
+          ],
+          "description": "Average DC bus voltage reported by the inverter electronics.",
+          "display_name": "DC bus voltage",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "avg",
+          "max",
+          "std"
+        ],
+        "relationships": [],
+        "technician_note": "Telemetry feature eOP_Vdc_act captured from the power electronics.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      }
+    },
+    "role": "raw_telemetry",
+    "row_count": 27119686,
+    "table": "ev_signals",
+    "usage": [
+      "High-frequency drivetrain telemetry covering torque, thermal, electrical, and duty-cycle signals.",
+      "Use for time-window diagnostics, correlation analysis, and validating aggregated statistics."
+    ]
+  },
+  "fleet_baselines": {
+    "grain": "fleet-signal",
+    "metrics": {
+      "fleet_avg": {
+        "category": "summary",
+        "description": "Fleet-wide average value.",
+        "domain_notes": [
+          "Use as the reference mean when benchmarking vehicle performance."
+        ],
+        "friendly_name": "Fleet-wide average value",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Fleet-wide average value. Use as the reference mean when benchmarking vehicle performance.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "fleet_p10": {
+        "category": "summary",
+        "description": "10th percentile across the fleet.",
+        "friendly_name": "10th percentile across the fleet",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "10th percentile across the fleet.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "fleet_p25": {
+        "category": "summary",
+        "description": "25th percentile across the fleet.",
+        "friendly_name": "25th percentile across the fleet",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "25th percentile across the fleet.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "fleet_p50": {
+        "category": "summary",
+        "description": "Median across the fleet.",
+        "friendly_name": "Median across the fleet",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Median across the fleet.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "fleet_p75": {
+        "category": "summary",
+        "description": "75th percentile across the fleet.",
+        "friendly_name": "75th percentile across the fleet",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "75th percentile across the fleet.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "fleet_p90": {
+        "category": "summary",
+        "description": "90th percentile across the fleet.",
+        "domain_notes": [
+          "Upper percentile threshold; vehicles above this value are outliers relative to the fleet."
+        ],
+        "friendly_name": "90th percentile across the fleet",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "90th percentile across the fleet. Upper percentile threshold; vehicles above this value are outliers relative to the fleet.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "fleet_p95": {
+        "category": "summary",
+        "description": "95th percentile across the fleet.",
+        "friendly_name": "95th percentile across the fleet",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "95th percentile across the fleet.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "fleet_std": {
+        "category": "summary",
+        "description": "Fleet-wide standard deviation.",
+        "domain_notes": [
+          "Standard deviation gives variability context for z-score calculations."
+        ],
+        "friendly_name": "Fleet-wide standard deviation",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Fleet-wide standard deviation. Standard deviation gives variability context for z-score calculations.",
+        "unit": null,
+        "valid_range": [
+          0.0,
+          null
+        ]
+      },
+      "sample_count": {
+        "category": "summary",
+        "description": "Number of telemetry samples used for the baseline.",
+        "friendly_name": "Number of telemetry samples used for the baseline",
+        "preferred_aggregations": [
+          "sum"
+        ],
+        "relationships": [],
+        "technician_note": "Number of telemetry samples used for the baseline.",
+        "unit": "count",
+        "valid_range": [
+          0,
+          null
+        ]
+      },
+      "signal": {
+        "category": "general",
+        "description": "Signal name for which fleet statistics were computed.",
+        "friendly_name": "Signal name for which fleet statistics were computed",
+        "preferred_aggregations": [
+          "count"
+        ],
+        "relationships": [],
+        "technician_note": "Signal name for which fleet statistics were computed.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      }
+    },
+    "role": "fleet_baselines",
+    "row_count": 7,
+    "table": "fleet_baselines()",
+    "usage": [
+      "Fleet-wide baselines (avg, stddev, percentiles) computed directly from ev_signals for key signals.",
+      "Select from this macro when normalising vehicle metrics against fleet performance or computing z-scores."
+    ]
+  },
+  "trip_segments": {
+    "grain": "vehicle-trip",
+    "metrics": {
+      "VehicleID": {
+        "category": "general",
+        "description": "Vehicle identifier.",
+        "friendly_name": "Vehicle identifier",
+        "preferred_aggregations": [
+          "count"
+        ],
+        "relationships": [],
+        "technician_note": "Vehicle identifier.",
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "avg_engine_speed": {
+        "category": "powertrain",
+        "description": "Average engine speed over the trip.",
+        "friendly_name": "Average engine speed over the trip",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Average engine speed over the trip.",
+        "unit": "rpm",
+        "valid_range": [
+          0.0,
+          null
+        ]
+      },
+      "avg_speed": {
+        "category": "duty_cycle",
+        "description": "Average front axle speed over the trip.",
+        "domain_notes": [
+          "Average speed for the trip window; useful for classifying duty cycle (urban vs. highway)."
+        ],
+        "families": [
+          "duty_cycle_profile"
+        ],
+        "friendly_name": "Average front axle speed over the trip",
+        "peer_signals": [
+          "trip_segments.avg_torque_error",
+          "trip_segments.trip_duration_min"
+        ],
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Average front axle speed over the trip. Average speed for the trip window; useful for classifying duty cycle (urban vs. highway).",
+        "unit": "km/h",
+        "valid_range": [
+          0.0,
+          null
+        ]
+      },
+      "avg_torque_error": {
+        "category": "powertrain",
+        "description": "Average torque error (requested vs delivered) over the trip.",
+        "domain_notes": [
+          "Trip-level torque stability metric; elevated values highlight repeatable drivetrain issues."
+        ],
+        "families": [
+          "torque_balance",
+          "duty_cycle_profile"
+        ],
+        "friendly_name": "Average torque error (requested vs delivered) over the trip",
+        "peer_signals": [
+          "ev_signals.HYB1a_EMTorqueRequest",
+          "ev_signals.INV1a_EMTorqueIndication",
+          "ev_signals.TorqueError_Nm",
+          "trip_segments.avg_speed",
+          "trip_segments.trip_duration_min"
+        ],
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "technician_note": "Average torque error (requested vs delivered) over the trip. Trip-level torque stability metric; elevated values highlight repeatable drivetrain issues.",
+        "unit": "Nm",
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "coverage_quality": {
+        "category": null,
+        "description": "",
+        "friendly_name": "Coverage quality",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "duty_cycle_label": {
+        "category": null,
+        "description": "",
+        "friendly_name": "Duty cycle label",
+        "preferred_aggregations": [
+          "avg"
+        ],
+        "relationships": [],
+        "unit": null,
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "sample_count": {
+        "category": "general",
+        "description": "Number of telemetry samples within the trip.",
+        "friendly_name": "Number of telemetry samples within the trip",
+        "preferred_aggregations": [
+          "sum"
+        ],
+        "relationships": [],
+        "technician_note": "Number of telemetry samples within the trip.",
+        "unit": "count",
+        "valid_range": [
+          0,
+          null
+        ]
+      },
+      "trip_duration_min": {
+        "category": "temporal",
+        "description": "Trip duration in minutes.",
+        "domain_notes": [
+          "Exposure window for each trip; use to weigh the significance of average metrics."
+        ],
+        "families": [
+          "duty_cycle_profile"
+        ],
+        "friendly_name": "Trip duration in minutes",
+        "metric": {
+          "aggregation": "SUM_TIME_HOURS",
+          "aliases": [
+            "runtime_hours",
+            "uptime"
+          ],
+          "description": "Total active time using trip duration derived from telemetry gaps.",
+          "display_name": "Operating hours",
+          "entity": "vehicle"
+        },
+        "peer_signals": [
+          "trip_segments.avg_speed",
+          "trip_segments.avg_torque_error"
+        ],
+        "preferred_aggregations": [
+          "avg",
+          "max"
+        ],
+        "relationships": [],
+        "technician_note": "Trip duration in minutes. Exposure window for each trip; use to weigh the significance of average metrics.",
+        "unit": "min",
+        "valid_range": [
+          0.0,
+          null
+        ]
+      },
+      "trip_end": {
+        "category": "temporal",
+        "description": "Trip end timestamp derived from ev_signals.",
+        "friendly_name": "Trip end timestamp derived from ev_signals",
+        "preferred_aggregations": [
+          "max"
+        ],
+        "relationships": [],
+        "technician_note": "Trip end timestamp derived from ev_signals.",
+        "unit": "s",
+        "valid_range": [
+          null,
+          null
+        ]
+      },
+      "trip_id": {
+        "category": "temporal",
+        "description": "Sequential trip number per vehicle computed from telemetry gaps.",
+        "friendly_name": "Sequential trip number per vehicle computed from telemetry gaps",
+        "metric": {
+          "aggregation": "COUNT_TRIPS",
+          "aliases": [
+            "trip_segments",
+            "segments"
+          ],
+          "description": "Number of trip segments detected for the vehicle using telemetry segmentation.",
+          "display_name": "Trip segments",
+          "entity": "vehicle"
+        },
+        "preferred_aggregations": [
+          "max"
+        ],
+        "relationships": [],
+        "technician_note": "Sequential trip number per vehicle computed from telemetry gaps.",
+        "unit": null,
+        "valid_range": [
+          0,
+          null
+        ]
+      },
+      "trip_start": {
+        "category": "temporal",
+        "description": "Trip start timestamp derived from ev_signals.",
+        "friendly_name": "Trip start timestamp derived from ev_signals",
+        "preferred_aggregations": [
+          "min"
+        ],
+        "relationships": [],
+        "technician_note": "Trip start timestamp derived from ev_signals.",
+        "unit": "s",
+        "valid_range": [
+          null,
+          null
+        ]
+      }
+    },
+    "role": "trip_segments",
+    "row_count": 22428,
+    "table": "trip_segments()",
+    "usage": [
+      "Telemetry-derived trip segmentation with start/end timestamps, duration, and trip-level averages.",
+      "Ideal for duty-cycle analysis (urban vs highway), maintenance planning, and summarising behaviour without scanning raw telemetry repeatedly."
+    ]
+  },
+  "columns": {
+    "DerivedHealthScore": {
+      "category": "diagnostics",
+      "description": "Derived health score combining subsystem penalties.",
+      "friendly_name": "Derived health score",
+      "preferred_aggregations": [
+        "avg"
+      ],
+      "technician_note": "Compute using efficiency, torque spike ratio, thermal event ratio, and unstable power ratio.",
+      "unit": null,
+      "valid_range": [
+        0.0,
+        1.0
+      ]
+    }
+  }
+}

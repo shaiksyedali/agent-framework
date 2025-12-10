@@ -23,6 +23,19 @@ from .events import (
 from .graph import StepDefinition, StepGraph
 from .runner import Orchestrator, OrchestrationError
 
+# Dynamic orchestrator utilities
+from .dynamic_orchestrator import (
+    create_agent_action,
+    create_approval_policy_builder,
+    create_conditional_graph,
+    create_data_flow_graph,
+    create_parallel_graph,
+    create_retry_wrapper,
+    create_sequential_graph,
+    enrich_context,
+    merge_workflow_outputs,
+)
+
 __all__ = [
     "ApprovalCallback",
     "ApprovalDecision",
@@ -44,4 +57,14 @@ __all__ = [
     "Orchestrator",
     "StepDefinition",
     "StepGraph",
+    # Dynamic orchestrator utilities
+    "create_agent_action",
+    "create_approval_policy_builder",
+    "create_conditional_graph",
+    "create_data_flow_graph",
+    "create_parallel_graph",
+    "create_retry_wrapper",
+    "create_sequential_graph",
+    "enrich_context",
+    "merge_workflow_outputs",
 ]

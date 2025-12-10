@@ -1,156 +1,294 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import ApprovalPanel from '../components/ApprovalPanel';
-import EventStream from '../components/EventStream';
-import ExecutionConsole from '../components/ExecutionConsole';
-import RunHistory from '../components/RunHistory';
-import WorkflowBuilder from '../components/WorkflowBuilder';
-import { fetchApiArtifacts } from '../lib/apiClient';
-import { currentModeLabel, loadRuns, startRun, type RunHandle } from '../lib/runClient';
-import type { ArtifactRecord, EventEnvelope, RunRecord, WorkflowDefinition } from '../lib/types';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { listWorkflows, deleteWorkflow } from '../lib/apiClient';
+import type { WorkflowConfig } from '../lib/types';
 
-const defaultDefinition: WorkflowDefinition = {
-  name: 'Fleet diagnostics assistant',
-  persona: 'Proactive analyst that surfaces anomalies and corrective actions.',
-  goals: 'Summarize fleet issues, highlight risky vehicles, propose next best actions.',
-  knowledge: {
-    database: { engine: 'sqlite', approvalMode: 'always_require', allowWrites: false }
-  },
-  steps: [],
-  sqlEngine: 'sqlite'
-};
-
-export default function Page() {
-  const [definition, setDefinition] = useState<WorkflowDefinition>(defaultDefinition);
-  const [events, setEvents] = useState<EventEnvelope[]>([]);
-  const [pendingApproval, setPendingApproval] = useState<EventEnvelope | undefined>();
-  const [runs, setRuns] = useState<RunRecord[]>([]);
-  const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
-  const runHandle = useRef<RunHandle | null>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
-  const [launching, setLaunching] = useState(false);
+export default function WorkflowsListPage() {
+  const router = useRouter();
+  const [workflows, setWorkflows] = useState<WorkflowConfig[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<string | null>(null);
 
   useEffect(() => {
-    loadRuns()
-      .then(history => setRuns(history))
-      .catch(err => {
-        console.error('Failed to load run history', err);
-        setError('Backend API unavailable. Configure NEXT_PUBLIC_HIL_API_BASE.');
-      });
+    loadWorkflows();
   }, []);
 
-  const running = useMemo(
-    () => runs.some(run => run.status === 'running' || run.status === 'awaiting-approval'),
-    [runs]
-  );
-
-  const refreshArtifacts = async (runId: string) => {
+  const loadWorkflows = async () => {
     try {
-      const records = await fetchApiArtifacts(runId);
-      setArtifacts(records);
+      setLoading(true);
+      const data = await listWorkflows();
+      setWorkflows(data);
+      setError(null);
     } catch (err) {
-      console.error('Failed to load artifacts', err);
-    }
-  };
-
-  const startRunFromDefinition = async () => {
-    if (launching) return;
-    setLaunching(true);
-    setError(null);
-    setProgress('Validating workflow and starting backend run');
-
-    try {
-      unsubscribeRef.current?.();
-      const handle = await startRun(definition, {
-        onProgress: status => setProgress(status)
-      });
-      runHandle.current = handle;
-      setEvents([]);
-      setPendingApproval(undefined);
-      setArtifacts([]);
-      setRuns(prev => [{ ...handle.run }, ...prev]);
-
-      const unsubscribe = handle.subscribe(event => {
-        setEvents(prev => [...prev, event]);
-        void refreshArtifacts(handle.run.id);
-
-        if (event.type === 'approval-request') {
-          setPendingApproval(event);
-          setRuns(prevRuns =>
-            prevRuns.map(run => (run.id === handle.run.id ? { ...run, status: 'awaiting-approval' } : run))
-          );
-        }
-
-        if (event.type === 'approval-decision') {
-          setPendingApproval(undefined);
-          setRuns(prevRuns =>
-            prevRuns.map(run => (run.id === handle.run.id ? { ...run, status: 'running' } : run))
-          );
-        }
-
-        if (event.type === 'status' && event.detail?.status) {
-          setRuns(prevRuns =>
-            prevRuns.map(run =>
-              run.id === handle.run.id
-                ? { ...run, status: event.detail?.status as RunRecord['status'] }
-                : run
-            )
-          );
-          if (['succeeded', 'failed'].includes(String(event.detail.status))) {
-            setProgress(null);
-          }
-        }
-      });
-
-      unsubscribeRef.current = unsubscribe;
-      setProgress('Streaming live events…');
-    } catch (err) {
+      setError('Failed to load workflows');
       console.error(err);
-      const message = err instanceof Error ? err.message : 'Failed to start run. Check backend availability or definition.';
-      setError(message);
     } finally {
-      setLaunching(false);
+      setLoading(false);
     }
   };
 
-  const approve = () => {
-    runHandle.current?.approve('Approved from UI');
+  const handleDelete = async (workflowId: string, workflowName: string) => {
+    if (!confirm(`Are you sure you want to delete "${workflowName}"?`)) {
+      return;
+    }
+
+    try {
+      await deleteWorkflow(workflowId);
+      await loadWorkflows();
+    } catch (err) {
+      setError('Failed to delete workflow');
+      console.error(err);
+    }
   };
 
-  const reject = () => {
-    runHandle.current?.reject('Rejected from UI');
+  const handleEdit = (workflowId: string) => {
+    router.push(`/builder?id=${workflowId}`);
+  };
+
+  const handleRun = (workflowId: string) => {
+    router.push(`/execute?id=${workflowId}`);
+  };
+
+  const handleCreateNew = () => {
+    router.push('/builder');
   };
 
   return (
-    <main className="grid-shell">
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <div className="tag">{currentModeLabel()}</div>
-            <h1 style={{ margin: '0.35rem 0 0 0' }}>Human-in-the-loop workflow runner</h1>
-            <p className="muted" style={{ marginTop: '0.25rem' }}>
-              Configure planner/SQL/RAG/reasoning agents, then stream execution with approvals.
-            </p>
-          </div>
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: '#F9FAFB',
+      padding: '2rem'
+    }}>
+      {/* Header */}
+      <div style={{
+        maxWidth: '1400px',
+        margin: '0 auto',
+        marginBottom: '2rem',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+      }}>
+        <div>
+          <h1 style={{
+            fontSize: '2rem',
+            fontWeight: 700,
+            color: '#111827',
+            margin: '0 0 0.5rem 0'
+          }}>
+            Agentic Workflows
+          </h1>
+          <p style={{
+            fontSize: '1rem',
+            color: '#6B7280',
+            margin: 0
+          }}>
+            Manage your workflows.
+          </p>
         </div>
-        <WorkflowBuilder
-          definition={definition}
-          onChange={setDefinition}
-          onSubmit={startRunFromDefinition}
-          busy={running || launching}
-        />
-        {progress ? <div className="card">{progress}</div> : null}
-        {error ? <div className="card error">{error}</div> : null}
-        <ApprovalPanel pending={pendingApproval} onApprove={approve} onReject={reject} />
-        <RunHistory runs={runs} />
+
+        <button
+          onClick={handleCreateNew}
+          style={{
+            padding: '0.75rem 1.5rem',
+            backgroundColor: '#111827',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '1rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <span>+</span> Create Workflow
+        </button>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-        <ExecutionConsole events={events} artifacts={artifacts} definition={definition} />
-        <EventStream events={events} />
-      </div>
-    </main>
+
+      {/* Error Message */}
+      {error && (
+        <div style={{
+          maxWidth: '1400px',
+          margin: '0 auto 1.5rem auto',
+          padding: '1rem',
+          backgroundColor: '#FEE2E2',
+          border: '1px solid #EF4444',
+          borderRadius: '8px',
+          color: '#991B1B'
+        }}>
+          {error}
+        </div>
+      )}
+
+      {/* Loading State */}
+      {loading && (
+        <div style={{
+          maxWidth: '1400px',
+          margin: '0 auto',
+          textAlign: 'center',
+          padding: '3rem',
+          color: '#6B7280'
+        }}>
+          Loading workflows...
+        </div>
+      )}
+
+      {/* Workflows Grid */}
+      {!loading && (
+        <div style={{
+          maxWidth: '1400px',
+          margin: '0 auto',
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(450px, 1fr))',
+          gap: '1.5rem'
+        }}>
+          {workflows.length === 0 ? (
+            <div style={{
+              gridColumn: '1 / -1',
+              textAlign: 'center',
+              padding: '4rem 2rem',
+              backgroundColor: 'white',
+              borderRadius: '12px',
+              border: '2px dashed #E5E7EB'
+            }}>
+              <p style={{
+                fontSize: '1.25rem',
+                color: '#6B7280',
+                marginBottom: '1rem'
+              }}>
+                No workflows yet
+              </p>
+              <p style={{
+                fontSize: '1rem',
+                color: '#9CA3AF',
+                marginBottom: '1.5rem'
+              }}>
+                Create your first workflow to get started
+              </p>
+              <button
+                onClick={handleCreateNew}
+                style={{
+                  padding: '0.75rem 1.5rem',
+                  backgroundColor: '#3B82F6',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontSize: '1rem',
+                  fontWeight: 600
+                }}
+              >
+                + Create Workflow
+              </button>
+            </div>
+          ) : (
+            workflows.map((workflow) => (
+              <div
+                key={workflow.id}
+                style={{
+                  backgroundColor: 'white',
+                  borderRadius: '12px',
+                  padding: '1.5rem',
+                  border: '1px solid #E5E7EB',
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
+                }}
+              >
+                {/* Workflow Header */}
+                <h2 style={{
+                  fontSize: '1.25rem',
+                  fontWeight: 600,
+                  color: '#111827',
+                  margin: '0 0 0.5rem 0'
+                }}>
+                  {workflow.name}
+                </h2>
+
+                {/* Workflow Description */}
+                <p style={{
+                  fontSize: '0.95rem',
+                  color: '#6B7280',
+                  margin: '0 0 1rem 0',
+                  lineHeight: '1.5'
+                }}>
+                  {workflow.description}
+                </p>
+
+                {/* Agents Count */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  fontSize: '0.9rem',
+                  color: '#6B7280',
+                  marginBottom: '1.5rem'
+                }}>
+                  <span>📋</span>
+                  <span>{workflow.agents.length} Agent{workflow.agents.length !== 1 ? 's' : ''}</span>
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{
+                  display: 'flex',
+                  gap: '0.75rem'
+                }}>
+                  <button
+                    onClick={() => handleEdit(workflow.id!)}
+                    style={{
+                      flex: 1,
+                      padding: '0.65rem 1rem',
+                      backgroundColor: 'white',
+                      color: '#374151',
+                      border: '1px solid #D1D5DB',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      fontWeight: 500
+                    }}
+                  >
+                    Edit
+                  </button>
+
+                  <button
+                    onClick={() => handleDelete(workflow.id!, workflow.name)}
+                    style={{
+                      padding: '0.65rem 1rem',
+                      backgroundColor: '#FEE2E2',
+                      color: '#DC2626',
+                      border: '1px solid #FCA5A5',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      fontWeight: 500
+                    }}
+                  >
+                    🗑️
+                  </button>
+
+                  <button
+                    onClick={() => handleRun(workflow.id!)}
+                    style={{
+                      flex: 1,
+                      padding: '0.65rem 1rem',
+                      backgroundColor: '#111827',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '0.9rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    ▶️ Run
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }

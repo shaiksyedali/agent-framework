@@ -127,6 +127,7 @@ Your responsibilities:
 Available agents and their capabilities:
 - sql_agent: Query databases, generate SQL, handle structured data
 - rag_agent: Search documents, retrieve relevant information with citations
+- mcp_agent: Web intelligence - scrape websites, browser automation, web search
 - response_generator: Format final responses with citations and follow-ups
 
 Output your plan in this JSON structure:
@@ -635,6 +636,173 @@ def get_response_generator_tools():
 
 
 # =========================================================================
+# MCP AGENT - For web intelligence using MCP servers
+# =========================================================================
+
+def get_mcp_instructions():
+    return """You are an MCP (Model Context Protocol) Agent for web intelligence and browser automation.
+
+## Available Tools (Playwright-based):
+- playwright_scrape: Scrape text and links from any webpage
+- playwright_navigate: Navigate with full browser and get accessibility snapshot
+- playwright_screenshot: Take screenshots of webpages
+- playwright_get_text: Extract text from specific elements
+- playwright_click_and_get: Click elements and capture results
+
+## YOUR WORKFLOW:
+1. Analyze the web intelligence task
+2. Choose the appropriate tool:
+   - Scraping content → playwright_scrape
+   - Dynamic/JavaScript pages → playwright_navigate
+   - Visual capture → playwright_screenshot
+   - Specific elements → playwright_get_text
+   - Interactive pages → playwright_click_and_get
+3. Execute the tool
+4. Return structured results
+
+## TOOL SELECTION GUIDE:
+- "scrape website for text" → playwright_scrape
+- "get page content" → playwright_scrape or playwright_navigate
+- "take screenshot" → playwright_screenshot
+- "extract specific data" → playwright_get_text with selector
+- "click button and see result" → playwright_click_and_get
+
+## OUTPUT FORMAT:
+- Return structured data (JSON) when possible
+- Include source URLs for traceability
+- Summarize key findings
+- Never return raw HTML - always extract meaningful content"""
+
+
+def get_mcp_tools():
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "playwright_scrape",
+                "description": "Scrape text content and links from a webpage. Works with both static and dynamic pages.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to scrape"
+                        },
+                        "extract_links": {
+                            "type": "boolean",
+                            "description": "Also extract all links from the page",
+                            "default": False
+                        },
+                        "wait_for": {
+                            "type": "string",
+                            "description": "CSS selector to wait for before scraping (for dynamic pages)"
+                        }
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "playwright_navigate",
+                "description": "Navigate to a URL with a full browser and get page content with accessibility snapshot. Best for JavaScript-heavy pages.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to navigate to"
+                        },
+                        "wait_for": {
+                            "type": "string",
+                            "description": "CSS selector to wait for before capturing content"
+                        }
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "playwright_screenshot",
+                "description": "Take a screenshot of a webpage. Returns base64-encoded PNG image.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to screenshot"
+                        },
+                        "full_page": {
+                            "type": "boolean",
+                            "description": "Capture the full scrollable page, not just viewport",
+                            "default": False
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector to screenshot specific element only"
+                        }
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "playwright_get_text",
+                "description": "Get text content from a webpage, optionally from specific elements using CSS selectors.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to get text from"
+                        },
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector to extract text from specific elements (e.g., '.price', 'h1', '#main')"
+                        },
+                        "wait_for": {
+                            "type": "string",
+                            "description": "CSS selector to wait for before extracting"
+                        }
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "playwright_click_and_get",
+                "description": "Click an element on a page and get the resulting content. Useful for buttons, tabs, accordions.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The initial URL"
+                        },
+                        "click_selector": {
+                            "type": "string",
+                            "description": "CSS selector of element to click"
+                        },
+                        "wait_for": {
+                            "type": "string",
+                            "description": "CSS selector to wait for after click"
+                        }
+                    },
+                    "required": ["url", "click_selector"]
+                }
+            }
+        }
+    ]
+
+
+# =========================================================================
 # CHAT AGENT - For post-workflow Q&A with all knowledge sources
 # =========================================================================
 
@@ -826,6 +994,18 @@ async def create_all_agents(project_endpoint: str, model: str = "gpt-4o"):
         )
         logger.info(f"✓ Response Generator Agent created: {response_gen.id}")
 
+        # 7. Create MCP Agent (Web Intelligence)
+        logger.info("Creating MCP Agent...")
+        mcp_agent = await agents_client.create_agent(
+            model=model,
+            name="mcp_agent",
+            instructions=get_mcp_instructions(),
+            tools=get_mcp_tools(),
+            temperature=0.5,
+            metadata={"agent_type": "mcp", "version": "1.0", "server": "playwright"}
+        )
+        logger.info(f"✓ MCP Agent created: {mcp_agent.id}")
+
         # Save agent IDs to configuration file
         config = {
             "created_at": str(asyncio.get_event_loop().time()),
@@ -855,6 +1035,10 @@ async def create_all_agents(project_endpoint: str, model: str = "gpt-4o"):
                 "response_generator": {
                     "id": response_gen.id,
                     "name": response_gen.name
+                },
+                "mcp_agent": {
+                    "id": mcp_agent.id,
+                    "name": mcp_agent.name
                 }
             }
         }
@@ -879,6 +1063,7 @@ async def create_all_agents(project_endpoint: str, model: str = "gpt-4o"):
         logger.info(f"  SQL Agent:          {sql_agent.id}")
         logger.info(f"  RAG Agent:          {rag_agent.id}")
         logger.info(f"  Response Generator: {response_gen.id}")
+        logger.info(f"  MCP Agent:          {mcp_agent.id}")
 
         logger.info("\nNext steps:")
         logger.info("1. Upload schema documentation for RAG agent")

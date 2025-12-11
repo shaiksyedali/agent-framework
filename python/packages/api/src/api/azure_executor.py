@@ -470,6 +470,39 @@ class AzureWorkflowExecutor:
                 logger.info(f"Routing SQL to AZURE for: {database}")
         
         # =====================================================================
+        # MCP TOOLS: Route to invoke_mcp Azure Function (Playwright only)
+        # =====================================================================
+        mcp_tools = [
+            "playwright_scrape", "playwright_navigate", "playwright_screenshot", 
+            "playwright_get_text", "playwright_click_and_get"
+        ]
+        if function_name in mcp_tools:
+            if not self.azure_functions_url:
+                return json.dumps({"error": "AZURE_FUNCTIONS_URL not configured for MCP tools."})
+            
+            server = "playwright"
+            
+            url = f"{self.azure_functions_url}/api/invoke_mcp"
+            headers = {"Content-Type": "application/json"}
+            if self.azure_functions_key:
+                headers["x-functions-key"] = self.azure_functions_key
+            
+            mcp_payload = {
+                "server": server,
+                "tool": function_name,
+                "params": arguments
+            }
+            
+            logger.info(f"Dispatching MCP tool '{function_name}' to {url}")
+            
+            async with httpx.AsyncClient(timeout=120.0) as http_client:
+                try:
+                    response = await http_client.post(url, json=mcp_payload, headers=headers)
+                    return response.text
+                except Exception as e:
+                    return json.dumps({"error": f"MCP tool failed: {str(e)}"})
+        
+        # =====================================================================
         # DEFAULT: Route to Azure Function
         # =====================================================================
         if not self.azure_functions_url:

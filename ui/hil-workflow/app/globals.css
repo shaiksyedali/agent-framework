@@ -70,7 +70,258 @@
   * {
     @apply border-border;
   }
+
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* ============================================
+   MODERN UI ENHANCEMENTS
+   ============================================ */
+
+/* Glassmorphism effect */
+.glass {
+  @apply bg-white/80 backdrop-blur-md border border-white/20;
+}
+
+.glass-dark {
+  @apply bg-slate-900/80 backdrop-blur-md border border-slate-700/50;
+}
+
+/* Gradient backgrounds */
+.gradient-primary {
+  background: linear-gradient(135deg, hsl(222.2 47.4% 11.2%) 0%, hsl(222.2 47.4% 25%) 100%);
+}
+
+.gradient-success {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+}
+
+.gradient-warning {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+}
+
+.gradient-info {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+}
+
+/* Timeline Step Indicators */
+.step-indicator {
+  @apply w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300;
+}
+
+.step-indicator-completed {
+  @apply bg-green-500 text-white shadow-lg shadow-green-500/30;
+}
+
+.step-indicator-current {
+  @apply bg-blue-500 text-white shadow-lg shadow-blue-500/40;
+}
+
+.step-indicator-pending {
+  @apply bg-gray-200 text-gray-400;
+}
+
+/* Pulse animation for running steps */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+.animate-pulse-ring::before {
+  content: '';
+  @apply absolute inset-0 rounded-full bg-blue-500/50;
+  animation: pulse-ring 1.5s ease-out infinite;
+}
+
+/* Success checkmark animation */
+@keyframes check-appear {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  50% {
+    transform: scale(1.2);
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-check {
+  animation: check-appear 0.4s ease-out forwards;
+}
+
+/* Fade slide in animation */
+@keyframes fade-slide-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-slide-in {
+  animation: fade-slide-in 0.3s ease-out forwards;
+}
+
+/* Timeline card styling */
+.timeline-card {
+  @apply relative pl-8 pb-8 transition-all duration-300;
+}
+
+.timeline-card:last-child {
+  @apply pb-0;
+}
+
+.timeline-card::before {
+  content: '';
+  @apply absolute left-[9px] top-6 w-0.5 h-full bg-gradient-to-b from-current to-gray-200;
+}
+
+.timeline-card:last-child::before {
+  @apply h-0;
+}
+
+/* Step output card */
+.step-output-card {
+  @apply bg-gradient-to-br from-slate-50 to-white border border-slate-200/60 rounded-xl p-4 shadow-sm;
+  @apply transition-all duration-200 hover:shadow-md hover:border-slate-300/60;
+}
+
+/* Metrics card */
+.metric-card {
+  @apply bg-gradient-to-br from-slate-50 to-slate-100/50 rounded-lg p-3 border border-slate-200/50;
+  @apply transition-all duration-200 hover:shadow-sm;
+}
+
+/* Terminal-style logs */
+.terminal-log {
+  @apply bg-slate-900 text-slate-100 font-mono text-sm rounded-lg p-4;
+}
+
+.terminal-log-entry {
+  @apply py-1 border-b border-slate-700/50 last:border-0;
+}
+
+.terminal-log-timestamp {
+  @apply text-slate-500 text-xs mr-2;
+}
+
+.terminal-log-prefix {
+  @apply text-green-400 mr-1;
+}
+
+/* Insights callout */
+.insights-callout {
+  @apply bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200/50 rounded-xl p-4;
+  @apply shadow-sm shadow-blue-100;
+}
+
+/* HIL Review panel */
+.hil-review-panel {
+  @apply bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-5;
+  @apply shadow-lg shadow-amber-100/50;
+}
+
+/* Status badge variants */
+.status-badge-running {
+  @apply bg-blue-100 text-blue-800 border border-blue-200;
+}
+
+.status-badge-completed {
+  @apply bg-green-100 text-green-800 border border-green-200;
+}
+
+.status-badge-failed {
+  @apply bg-red-100 text-red-800 border border-red-200;
+}
+
+.status-badge-waiting {
+  @apply bg-amber-100 text-amber-800 border border-amber-200;
+}
+
+/* Progress bar with gradient */
+.progress-gradient {
+  background: linear-gradient(90deg, #3b82f6 0%, #10b981 100%);
+}
+
+/* Thought process collapsible */
+.thought-process {
+  @apply bg-slate-50/80 border border-slate-200/50 rounded-lg overflow-hidden;
+}
+
+.thought-process-header {
+  @apply flex items-center gap-2 p-3 cursor-pointer hover:bg-slate-100/50 transition-colors;
+  @apply text-sm font-medium text-slate-600;
+}
+
+.thought-process-content {
+  @apply p-4 pt-0 text-sm text-slate-600 whitespace-pre-wrap;
+  @apply border-t border-slate-200/50 bg-white/50;
+}
+
+/* Content prose improvements - vanilla CSS (no typography plugin needed) */
+.prose-modern {
+  @apply text-sm leading-relaxed text-slate-700;
+}
+
+.prose-modern h1,
+.prose-modern h2,
+.prose-modern h3,
+.prose-modern h4 {
+  @apply text-slate-800 font-semibold mb-3 mt-4;
+}
+
+.prose-modern p {
+  @apply text-slate-600 leading-relaxed mb-3;
+}
+
+.prose-modern a {
+  @apply text-blue-600 hover:underline;
+}
+
+.prose-modern code {
+  @apply bg-slate-100 px-1.5 py-0.5 rounded text-sm;
+}
+
+.prose-modern pre {
+  @apply bg-slate-900 text-slate-100 p-4 rounded-lg overflow-x-auto;
+}
+
+.prose-modern ul,
+.prose-modern ol {
+  @apply pl-5 mb-3 space-y-1;
+}
+
+.prose-modern li {
+  @apply text-slate-600;
+}
+
+.prose-modern table {
+  @apply w-full border-collapse mb-4;
+}
+
+.prose-modern th,
+.prose-modern td {
+  @apply border border-slate-200 px-3 py-2 text-left text-sm;
+}
+
+.prose-modern th {
+  @apply bg-slate-100 font-semibold;
 }

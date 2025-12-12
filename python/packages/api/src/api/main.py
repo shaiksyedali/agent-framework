@@ -346,18 +346,38 @@ async def chat_with_job(request: ChatRequest):
         # 1. Query SQL database if available (often has structured people/location data)
         if has_databases:
             db_names = list(database_paths.keys()) if isinstance(database_paths, dict) else []
-            sql_context = f"""You are querying a SQL database to answer a user question.
+            
+            # Get csv_files context which has more detailed table info
+            csv_files = job.context.get("csv_files", [])
+            csv_table_info = ""
+            if csv_files:
+                csv_table_info = "\n\nAVAILABLE CSV TABLES:\n"
+                for csv in csv_files:
+                    csv_table_info += f"  - {csv.get('name', 'unknown')}: {csv.get('path', 'N/A')}\n"
+                    if csv.get('columns'):
+                        csv_table_info += f"    Columns: {', '.join(csv.get('columns', []))}\n"
+            
+            # Build list of ALL available databases
+            all_databases = ", ".join(db_names) if db_names else "local database"
+            
+            sql_context = f"""You are querying SQL databases to answer a user question.
 
-AVAILABLE DATABASE: {db_names[0] if db_names else 'local database'}
-DATABASE TABLES: Use get_database_schema first to see available tables and columns.
+AVAILABLE DATABASES: {all_databases}
+{csv_table_info}
 
 USER QUESTION: {request.message}
 
-CRITICAL WORKFLOW:
+CRITICAL WORKFLOW - SEARCH ALL RELEVANT TABLES:
 1. FIRST call get_database_schema(database="{db_names[0] if db_names else 'default'}") to see tables
-2. Generate appropriate SQL query based on schema
-3. Call execute_sql_query with the SQL query
-4. Return the results or state "No matching data found in database"
+2. If the question is about a PERSON (e.g., staff member, project manager):
+   - Search the STAFF table (tdn_staff or similar) for their name
+   - Search the PLAN table for their assignments
+3. Generate appropriate SQL query using LIKE '%partial_name%' for flexible matching
+4. Call execute_sql_query with the SQL query
+5. If no results in one table, TRY OTHER TABLES
+
+IMPORTANT: Staff/people data is often in a separate staff table, not the main plan table.
+Always search multiple tables when looking for person-related data.
 
 Be thorough - search for partial matches (LIKE '%name%') when exact matches fail."""
 

@@ -20,8 +20,9 @@ azure-ai-agents==1.0.0b1
 
 # NLP - spaCy for fast entity extraction (no LLM needed)
 spacy==3.7.4
-# spaCy small English model (~12MB, optimized for speed)
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+# spaCy small English model - COMMENTED: causes 504 timeout during deployment
+# Install post-deployment if needed: python -m spacy download en_core_web_sm
+# https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
 
 # Utilities
 python-dateutil==2.8.2
@@ -30,3 +31,6 @@ pypdf==4.0.0
 # Async Support
 aiohttp==3.9.3
 httpx==0.27.2
+
+# Browser Automation (Steel for MCP agent)
+steel-sdk>=0.15.0

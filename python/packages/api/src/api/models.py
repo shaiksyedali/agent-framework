@@ -62,7 +62,7 @@ class StepConfig(BaseModel):
     team_id: Optional[str] = None
     input_template: str = "{input}"
     output_key: str = "result"
-    requires_approval: bool = False
+    requires_approval: bool = True  # HIL framework: approval required by default
 
 
 class WorkflowConfig(BaseModel):

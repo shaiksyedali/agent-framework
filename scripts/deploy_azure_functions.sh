@@ -187,7 +187,11 @@ fi
 # Configure Function App Settings
 #==============================================================================
 
-log_info "Configuring function app settings..."
+# First, get the function key if it exists (for internal function calls)
+EXISTING_HOST_KEY=$(az functionapp keys list \
+    --name "$FUNCTION_APP_NAME" \
+    --resource-group "$AZURE_RESOURCE_GROUP" \
+    --query "functionKeys.default" -o tsv 2>/dev/null || echo "")
 
 az functionapp config appsettings set \
     --name "$FUNCTION_APP_NAME" \
@@ -203,6 +207,8 @@ az functionapp config appsettings set \
         "AZURE_SEARCH_INDEX=$AZURE_SEARCH_INDEX" \
         "AZURE_SEARCH_KEY=$AZURE_SEARCH_KEY" \
         "AZURE_AI_PROJECT_ENDPOINT=$AZURE_AI_PROJECT_ENDPOINT" \
+        "AZURE_FUNCTIONS_URL=https://${FUNCTION_APP_NAME}.azurewebsites.net" \
+        "AZURE_FUNCTIONS_KEY=${EXISTING_HOST_KEY:-}" \
         "SEMANTIC_CONFIG_NAME=${SEMANTIC_CONFIG_NAME:-default}" \
         "AZURE_DOC_INTELLIGENCE_ENDPOINT=${AZURE_DOC_INTELLIGENCE_ENDPOINT:-}" \
         "AZURE_DOC_INTELLIGENCE_KEY=${AZURE_DOC_INTELLIGENCE_KEY:-}" \
@@ -214,6 +220,7 @@ az functionapp config appsettings set \
         "CHUNK_OVERLAP_TOKENS=${CHUNK_OVERLAP_TOKENS:-100}" \
         "ENABLE_CHUNK_SUMMARIES=${ENABLE_CHUNK_SUMMARIES:-false}" \
         "ENABLE_LLM_ENTITY_EXTRACTION=${ENABLE_LLM_ENTITY_EXTRACTION:-false}" \
+        "STEEL_API_KEY=${STEEL_API_KEY:-}" \
         "SCM_DO_BUILD_DURING_DEPLOYMENT=true" \
         "ENABLE_ORYX_BUILD=true" \
     > /dev/null
@@ -265,6 +272,20 @@ if [ -n "$PRINCIPAL_ID" ]; then
         --role "Search Service Contributor" \
         --scope "$SCOPE" \
         || echo "  [WARN] Failed to assign 'Search Service Contributor' role. You may need to ask an admin to do this."
+    
+    # Azure AI Developer (for cloud executor - Azure AI Foundry access)
+    az role assignment create \
+        --assignee "$PRINCIPAL_ID" \
+        --role "Azure AI Developer" \
+        --scope "$SCOPE" \
+        || echo "  [WARN] Failed to assign 'Azure AI Developer' role. You may need to ask an admin to do this."
+
+    # Cognitive Services User (for Azure AI Foundry agents)
+    az role assignment create \
+        --assignee "$PRINCIPAL_ID" \
+        --role "Cognitive Services User" \
+        --scope "$SCOPE" \
+        || echo "  [WARN] Failed to assign 'Cognitive Services User' role. You may need to ask an admin to do this."
     
     set -e
     
@@ -392,6 +413,9 @@ log_info "  - POST $FUNCTION_APP_URL/api/list_available_agents"
 log_info "  - POST $FUNCTION_APP_URL/api/validate_data_source"
 log_info "  - POST $FUNCTION_APP_URL/api/extract_citations"
 log_info "  - POST $FUNCTION_APP_URL/api/generate_followup_questions"
+log_info "  - POST $FUNCTION_APP_URL/api/execute_step (cloud executor)"
+log_info "  - POST $FUNCTION_APP_URL/api/format_output (cloud executor)"
+log_info "  - POST $FUNCTION_APP_URL/api/request_user_feedback (cloud executor)"
 log_info ""
 log_info "Next steps:"
 log_info "  1. Test the functions using the test script"

@@ -44,7 +44,6 @@ def _get_evaluator():
 
 logger = logging.getLogger(__name__)
 
-
 class AzureWorkflowExecutor:
     """Executes workflows by orchestrating Azure AI Foundry Agents locally / Dispatching Tools"""
 
@@ -102,7 +101,7 @@ class AzureWorkflowExecutor:
             return None
 
     async def initialize(self):
-        """Initialize Azure AI Foundry AgentsClient and Cosmos DB"""
+        """Initialize Azure AI Foundry AgentsClient"""
         try:
             # Get AI Foundry project endpoint
             endpoint = os.getenv("AZURE_AI_PROJECT_ENDPOINT")
@@ -122,26 +121,12 @@ class AzureWorkflowExecutor:
             logger.info(f"AzureWorkflowExecutor initialized with AI Foundry AgentsClient")
             logger.info(f"Endpoint: {endpoint}")
             
-            # Initialize Cosmos DB for job state (if configured)
-            try:
-                await db.initialize_cosmos()
-                if db._use_cosmos:
-                    logger.info("Cosmos DB initialized for job state persistence")
-            except Exception as cosmos_err:
-                logger.warning(f"Cosmos DB not available, using SQLite: {cosmos_err}")
-            
         except Exception as e:
             logger.error(f"Failed to initialize AI Foundry client: {e}")
 
     async def cleanup(self):
-        """Cleanup connections"""
         if self._credential:
             await self._credential.close()
-        # Cleanup Cosmos DB
-        try:
-            await db.cleanup_cosmos()
-        except Exception:
-            pass
 
     def _load_agents_config(self) -> Dict[str, Any]:
         """Load Azure agents configuration"""
@@ -153,76 +138,6 @@ class AzureWorkflowExecutor:
         except Exception as e:
             logger.error(f"Could not load azure_agents_config.json: {e}")
             return {"agents": {}}
-    
-    def _has_local_data_sources(self, workflow: 'WorkflowConfig', input_data: Dict[str, Any]) -> bool:
-        """
-        Detect if workflow uses LOCAL DATABASE files that require local SQL execution.
-        
-        LOCAL (requires local executor):
-        - .db, .sqlite, .sqlite3, .duckdb (SQLite/DuckDB databases)
-        - .csv, .parquet, .xlsx (data files queried via DuckDB)
-        
-        CLOUD (can use cloud executor):
-        - Azure SQL databases
-        - Documents (PDF, DOCX, TXT, etc.) - indexed to Azure Search
-        - Azure AI Search / RAG sources
-        - No data sources (pure LLM workflow)
-        """
-        # Only these extensions need LOCAL SQL execution
-        local_db_extensions = ['.db', '.duckdb', '.sqlite', '.sqlite3', '.csv', '.parquet', '.xlsx']
-        
-        # Document extensions are indexed to cloud - NOT local
-        document_extensions = ['.pdf', '.docx', '.doc', '.txt', '.md', '.pptx', '.html']
-        
-        # Check workflow data_sources
-        for ds in workflow.data_sources:
-            if ds.path:
-                path_lower = ds.path.lower()
-                
-                # Skip document files - they're indexed to Azure Search (cloud)
-                if any(path_lower.endswith(ext) for ext in document_extensions):
-                    logger.debug(f"Document (cloud-indexed): {ds.path}")
-                    continue
-                
-                # Check for local DATABASE file extensions
-                if any(path_lower.endswith(ext) for ext in local_db_extensions):
-                    logger.info(f"Local database detected: {ds.path}")
-                    return True
-            
-            # Check data source type - only database types are local
-            if ds.type in ['local_database', 'csv', 'sqlite', 'duckdb']:
-                logger.info(f"Local database type detected: {ds.type}")
-                return True
-        
-        # Check input_data for database file references
-        for key, value in input_data.items():
-            if isinstance(value, str):
-                value_lower = value.lower()
-                # Only database extensions trigger local execution
-                if any(value_lower.endswith(ext) for ext in local_db_extensions):
-                    logger.info(f"Local database in input_data: {key}={value}")
-                    return True
-        
-        # Check input_data for data_sources list (from UI)
-        if 'data_sources' in input_data:
-            for ds in input_data['data_sources']:
-                if isinstance(ds, dict):
-                    ds_path = ds.get('path', '')
-                    ds_type = ds.get('type', '')
-                    
-                    # Skip documents
-                    if any(ds_path.lower().endswith(ext) for ext in document_extensions):
-                        continue
-                    
-                    if any(ds_path.lower().endswith(ext) for ext in local_db_extensions):
-                        logger.info(f"Local database in input: {ds_path}")
-                        return True
-                    if ds_type in ['local_database', 'csv', 'sqlite', 'duckdb']:
-                        return True
-        
-        # No local DATABASE sources found - can use cloud executor
-        logger.info("No local databases detected - eligible for cloud execution")
-        return False
             
     # =========================================================================
     # TOOL DISPATCHER (Local vs Cloud Routing)
@@ -604,13 +519,7 @@ class AzureWorkflowExecutor:
             "get_entity_facets": "consult_rag",  # Uses consult_rag with pipeline=facets
             "validate_data_source": "validate_data_source",
             "extract_citations": "extract_citations",
-            "generate_followup_questions": "generate_followup_questions",
-            # Executor agent tools
-            "execute_step": "execute_step",
-            "format_output": "format_output",
-            "request_user_feedback": "request_user_feedback",
-            # Agent invocation
-            "invoke_agent": "invoke_agent",
+            "generate_followup_questions": "generate_followup_questions"
         }
         
         endpoint = endpoint_map.get(function_name)
@@ -644,36 +553,6 @@ class AzureWorkflowExecutor:
             except Exception as e:
                 logger.error(f"Error calling tool {function_name}: {e}")
                 return json.dumps({"error": str(e)})
-
-    # =========================================================================
-    # AZURE FUNCTION HELPER
-    # =========================================================================
-    
-    async def _call_azure_function(self, endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Direct call to an Azure Function endpoint.
-        Returns parsed JSON response or error dict.
-        """
-        if not self.azure_functions_url:
-            return {"success": False, "error": "Azure Functions URL not configured"}
-        
-        url = f"{self.azure_functions_url}/api/{endpoint}"
-        headers = {"Content-Type": "application/json"}
-        if self.azure_functions_key:
-            headers["x-functions-key"] = self.azure_functions_key
-        
-        logger.info(f"Calling Azure Function: {url}")
-        
-        async with httpx.AsyncClient(timeout=180.0) as http_client:
-            try:
-                response = await http_client.post(url, json=payload, headers=headers)
-                try:
-                    return response.json()
-                except:
-                    return {"success": True, "output": response.text}
-            except Exception as e:
-                logger.error(f"Azure Function call failed: {e}")
-                return {"success": False, "error": str(e)}
 
     # =========================================================================
     # OPENAI RUN LOGIC
@@ -762,38 +641,17 @@ class AzureWorkflowExecutor:
                         for tool_call in run.required_action.submit_tool_outputs.tool_calls:
                             func_name = tool_call.function.name
                             args_str = tool_call.function.arguments
-                            logger.info(f"[Tool Call] {func_name} raw args: {args_str[:500] if args_str else 'EMPTY'}")
                             try:
-                                args = json.loads(args_str) if args_str else {}
-                            except Exception as parse_err:
-                                logger.warning(f"Failed to parse args: {parse_err}")
+                                args = json.loads(args_str)
+                            except:
                                 args = {}
                             
-                            logger.info(f"[Tool Call] {func_name} parsed args keys: {list(args.keys()) if args else 'EMPTY'}")
                             self._add_log(job, f"  → Executing Tool: {func_name}...")
                             
                             # Execute locally/dispatch (pass job for context like workflow_id)
                             output = await self._execute_tool_call(func_name, args, job)
                             
                             self._add_log(job, f"  ← Tool Result ({func_name}): {output[:200]}...")
-                            
-                            # IMPORTANT: Track individual step outputs in real-time
-                            if func_name == "execute_step" and output:
-                                try:
-                                    step_result = json.loads(output) if isinstance(output, str) else output
-                                    step_name = step_result.get("step_name") or args.get("step", {}).get("name")
-                                    if step_name and step_result.get("success"):
-                                        from .models import StepOutput
-                                        job.step_outputs[step_name] = StepOutput(
-                                            content=step_result.get("output", "Step completed"),
-                                            thought_process=f"Executed via cloud executor (step {step_result.get('step_id', '?')})"
-                                        )
-                                        # Update step index for UI progress tracking
-                                        job.current_step_index = max(job.current_step_index, 
-                                            int(step_result.get("step_id", "0").replace("step_", "")) if "step_" in str(step_result.get("step_id", "")) else job.current_step_index + 1)
-                                        db.update_job(job)
-                                except Exception as e:
-                                    logger.warning(f"Failed to track step output: {e}")
                             
                             tool_outputs.append({
                                 "tool_call_id": tool_call.id,
@@ -815,130 +673,6 @@ class AzureWorkflowExecutor:
             logger.error(f"Agent Run Failed: {e}", exc_info=True)
             return f"Error running agent: {str(e)}"
 
-    async def _run_executor_agent(self, job: JobStatus, workflow: 'WorkflowConfig', input_data: Dict[str, Any]) -> str:
-        """
-        Delegate workflow execution to the cloud executor_agent.
-        
-        This is used for cloud-only workflows (no local data sources).
-        The executor_agent handles:
-        - Step sequencing
-        - Agent invocation (sql_agent, rag_agent, mcp_agent)
-        - Output formatting
-        - User feedback requests
-        
-        Returns: Final workflow result or error message
-        """
-        # Look up executor agent - check both "executor_agent" and "executor" keys
-        agents = self.agents_config.get("agents", {})
-        executor_config = agents.get("executor_agent") or agents.get("executor")
-        
-        if not executor_config:
-            logger.warning("executor_agent not configured, falling back to local execution")
-            return None  # Signal to use local execution
-        
-        # Extract agent ID (config can be dict with 'id' key or direct ID string)
-        if isinstance(executor_config, dict):
-            executor_agent_id = executor_config.get("id")
-        else:
-            executor_agent_id = executor_config
-        
-        if not executor_agent_id:
-            logger.warning("executor_agent ID not found in config, falling back to local execution")
-            return None
-        
-        self._add_log(job, "🌐 Routing to cloud executor_agent (no local data sources)")
-        
-        # Build executor prompt with workflow plan
-        steps_json = json.dumps([{
-            "step_id": s.id or str(i+1),
-            "name": s.name,
-            "description": s.description,
-            "agent": s.agent_id,
-            "requires_approval": s.requires_approval
-        } for i, s in enumerate(workflow.steps)], indent=2)
-        
-        user_request = workflow.user_intent or input_data.get('input', 'Execute workflow')
-        num_steps = len(workflow.steps)  # Pre-compute for f-string
-        
-        executor_prompt = f"""Execute this workflow step by step.
-
-## User Request
-{user_request}
-
-## Workflow: {workflow.name}
-{workflow.description}
-
-## Steps to Execute
-{steps_json}
-
-## Data Sources
-{json.dumps([{"name": ds.name, "type": ds.type} for ds in workflow.data_sources], indent=2)}
-
-## IMPORTANT: Tool Usage Patterns
-
-### 1. Calling execute_step
-When calling execute_step, pass the step object like this:
-```json
-{{
-  "step": {{
-    "step_id": "<step_id from above>",
-    "name": "<step name>",
-    "description": "<step description>",
-    "agent": "<agent id from the step>"
-  }},
-  "context": {{
-    "user_request": "{user_request}"
-  }}
-}}
-```
-
-### 2. Calling format_output (IMPORTANT - pass data!)
-After execute_step returns, if you want to format the output, you MUST include the data:
-```json
-{{
-  "data": {{
-    "step_id": "<step_id>",
-    "content": "<the actual output text from execute_step>",
-    "success": true
-  }},
-  "format": "text"
-}}
-```
-
-### 3. Calling request_user_feedback (only if requires_approval is true)
-```json
-{{
-  "step_result": {{
-    "step_id": "<step_id>",
-    "step_name": "<name>",
-    "success": true,
-    "output": "<the output from execute_step>"
-  }}
-}}
-```
-
-## **CRITICAL INSTRUCTIONS - MUST FOLLOW**
-
-**This workflow has {num_steps} step(s). You MUST execute ALL of them in order.**
-
-1. **Execute EVERY step listed above** - Do NOT skip any step
-2. For each step, call execute_step with the step's agent ID
-3. Wait for each step to complete before moving to the next
-4. After ALL steps are complete (you have executed {num_steps} execute_step calls), provide a final summary
-
-**IMPORTANT**: Do NOT finish until you have called execute_step exactly {num_steps} time(s).
-Do NOT call format_output unless specifically needed.
-
-Begin now. Execute step 1, then step 2, and so on until all {num_steps} steps are complete."""
-
-        try:
-            result = await self._run_foundry_agent(job, executor_agent_id, executor_prompt)
-            return result
-        except Exception as e:
-            logger.error(f"executor_agent failed: {e}")
-            self._add_log(job, f"⚠️ Cloud executor failed: {e}. Falling back to local.")
-            return None  # Signal to use local execution
-
     # =========================================================================
     # ORCHESTRATION LOGIC (Same as before, just uses _run_foundry_agent)
     # =========================================================================
@@ -954,154 +688,8 @@ Begin now. Execute step 1, then step 2, and so on until all {num_steps} steps ar
             workflow.steps = []
             db.create_workflow(workflow)
 
-        # Determine execution mode: local vs cloud
-        use_cloud_executor = not self._has_local_data_sources(workflow, input_data)
-        
-        # Store execution mode in job context for resume_job to use
-        job = db.get_job(job_id)
-        job.context["use_cloud_executor"] = use_cloud_executor
-        job.context["input_data"] = input_data  # Store for resume
-        db.update_job(job)
-        
-        if use_cloud_executor:
-            # Cloud-only workflow: execute steps via cloud with HIL
-            asyncio.create_task(self._process_cloud_workflow(job_id, workflow, input_data))
-        else:
-            # Has local data sources: use local orchestration
-            asyncio.create_task(self._process_job_steps(job_id, workflow, input_data))
-        
+        asyncio.create_task(self._process_job_steps(job_id, workflow, input_data))
         return job_id
-
-    async def _process_cloud_workflow(self, job_id: str, workflow: 'WorkflowConfig', input_data: Dict[str, Any]):
-        """
-        Process workflow via cloud execution with HIL (Human-in-the-Loop).
-        
-        Executes ONE step at a time via execute_step Azure Function,
-        then pauses for user review if requires_approval is True.
-        """
-        job = db.get_job(job_id)
-        if not job:
-            return
-        
-        try:
-            if job.status == "pending":
-                job.status = "in_progress"
-                self._add_log(job, "☁️ Starting cloud workflow execution...")
-                job.context["user_request"] = workflow.user_intent or input_data.get("input", "Execute workflow")
-                db.update_job(job)
-            
-            if not self.client:
-                await self.initialize()
-            
-            start_index = job.current_step_index
-            if job.status == "waiting_for_user":
-                job.status = "in_progress"
-            
-            # Agent lookup map for resolving names to IDs
-            agents_map = self.agents_config.get("agents", {})
-            
-            for i in range(start_index, len(workflow.steps)):
-                step = workflow.steps[i]
-                job.current_step_index = i
-                db.update_job(job)
-                
-                self._add_log(job, f"=== Step {i+1}: {step.name} ===")
-                
-                # Resolve Agent ID
-                agent_id = step.agent_id
-                if agent_id in agents_map:
-                    agent_id = agents_map[agent_id]["id"]
-                elif agent_id and "_" in agent_id:
-                    for k, v in agents_map.items():
-                        if v.get("name") == agent_id:
-                            agent_id = v["id"]
-                            break
-                
-                self._add_log(job, f"Agent: {step.agent_id} ({agent_id})")
-                
-                # Build context for this step
-                context = {
-                    "user_request": job.context.get("user_request", ""),
-                    "previous_outputs": {}
-                }
-                
-                # Include previous step outputs
-                for j in range(i):
-                    prev_step = workflow.steps[j]
-                    if prev_step.name in job.step_outputs:
-                        context["previous_outputs"][prev_step.name] = job.step_outputs[prev_step.name].content
-                
-                # Add user feedback if retrying
-                feedback_key = f"user_feedback_step_{i+1}"
-                if feedback_key in job.context:
-                    context["user_feedback"] = job.context[feedback_key]
-                    self._add_log(job, f"Using feedback: {job.context[feedback_key][:100]}...")
-                
-                # Execute step via execute_step Azure Function
-                self._add_log(job, f"→ Executing step via cloud...")
-                
-                step_payload = {
-                    "step": {
-                        "step_id": f"step_{i+1}",
-                        "name": step.name,
-                        "description": step.description or step.name,
-                        "agent": agent_id
-                    },
-                    "context": context
-                }
-                
-                response = await self._call_azure_function("execute_step", step_payload)
-                
-                if response.get("success"):
-                    step_output = response.get("output", "Step completed")
-                    self._add_log(job, f"← Response received")
-                    
-                    # Store output
-                    from .models import StepOutput
-                    job.step_outputs[step.name] = StepOutput(
-                        content=step_output,
-                        thought_process=f"Executed via cloud (step {i+1})"
-                    )
-                    job.context[f"step_{i+1}_output"] = step_output
-                else:
-                    error_msg = response.get("error", "Unknown error")
-                    self._add_log(job, f"← Step failed: {error_msg}")
-                    job.step_outputs[step.name] = StepOutput(
-                        content=f"Error: {error_msg}",
-                        thought_process="Step execution failed"
-                    )
-                
-                db.update_job(job)
-                
-                # =========================================================
-                # HIL: Pause for user review if requires_approval is True
-                # =========================================================
-                if step.requires_approval:
-                    is_last_step = (i == len(workflow.steps) - 1)
-                    if is_last_step:
-                        self._add_log(job, f"⏸️ Final step completed. Review: '{step.name}'")
-                    else:
-                        self._add_log(job, f"⏸️ Step completed. Review: '{step.name}'")
-                    
-                    job.status = "waiting_for_user"
-                    job.context["pending_step_index"] = i
-                    job.context["pending_step_name"] = step.name
-                    job.context["is_last_step"] = is_last_step
-                    db.update_job(job)
-                    return  # Exit loop, wait for resume_job
-            
-            # All steps completed
-            job.current_step_index = len(workflow.steps)
-            job.status = "completed"
-            self._add_log(job, "✅ Cloud workflow completed successfully")
-            db.update_job(job)
-            
-        except Exception as e:
-            logger.error(f"Cloud workflow failed: {e}", exc_info=True)
-            job.status = "failed"
-            job.error = str(e)
-            self._add_log(job, f"❌ Cloud workflow failed: {e}")
-            db.update_job(job)
 
     async def _process_job_steps(self, job_id: str, workflow: WorkflowConfig, input_data: Dict[str, Any]):
         try:
@@ -1506,16 +1094,9 @@ Begin now. Execute step 1, then step 2, and so on until all {num_steps} steps ar
             
             db.update_job(job)
             
-            # Resume execution - route to appropriate handler based on execution mode
-            workflow = db.get_workflow(job.workflow_id)
-            input_data = job.context.get("input_data", {})
-            
-            if job.context.get("use_cloud_executor"):
-                # Cloud workflow - use cloud step execution
-                asyncio.create_task(self._process_cloud_workflow(job.id, workflow, input_data))
-            else:
-                # Local workflow
-                asyncio.create_task(self._process_job_steps(job.id, workflow, input_data))
+            # Resume execution
+            # If approved, loop starts at i+1. If retry, loop starts at i.
+            asyncio.create_task(self._process_job_steps(job.id, db.get_workflow(job.workflow_id), {}))
             
         return job
 

@@ -233,18 +233,18 @@ def get_executor_tools():
             "type": "function",
             "function": {
                 "name": "format_output",
-                "description": "Format step output for display",
+                "description": "Format step output for display. IMPORTANT: You must pass the actual data from the previous execute_step result in the 'data' field.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "data": {
                             "type": "object",
-                            "description": "Data to format"
+                            "description": "The output data from execute_step to format. This should contain the 'output' field from the execute_step result. Example: {\"content\": \"text from previous step\", \"step_id\": \"step_1\"}"
                         },
                         "format": {
                             "type": "string",
-                            "enum": ["table", "text", "json"],
-                            "description": "Output format"
+                            "enum": ["table", "text", "json", "markdown"],
+                            "description": "Output format: 'text' for plain text, 'table' for tabular data, 'json' for raw JSON, 'markdown' for formatted markdown"
                         }
                     },
                     "required": ["data", "format"]
@@ -255,13 +255,17 @@ def get_executor_tools():
             "type": "function",
             "function": {
                 "name": "request_user_feedback",
-                "description": "Request user feedback after step completion",
+                "description": "Request user feedback when a step requires approval. Use this when the step has requires_approval=true.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "step_result": {
                             "type": "object",
-                            "description": "Result from the completed step"
+                            "description": "The complete result from execute_step including step_id, step_name, success, and output fields"
+                        },
+                        "question": {
+                            "type": "string",
+                            "description": "Optional question to ask the user about this result"
                         }
                     },
                     "required": ["step_result"]
@@ -457,7 +461,24 @@ For content queries:
 For counting queries:
 - Retrieve many results (top_k=100)
 - Count unique items from the chunk content
-- Report the count with examples"""
+- Report the count with examples
+
+## OUTPUT FORMATTING
+
+Format your response for visual readability using markdown:
+- Use **bold** for key terms and important values
+- Use bullet points for lists of items
+- Use tables when presenting structured or comparative data
+- Use clear headings to organize longer responses
+- Always cite sources with [Document, Page]
+
+Adapt your format to the content:
+- If data has numbers or specs, present them clearly with labels
+- If content is explanatory, use well-structured paragraphs
+- If comparing items, use a table
+- If listing findings, use bullet points
+
+Let the content guide your format - do not force a rigid structure."""
 
 
 
@@ -560,31 +581,31 @@ def get_response_generator_instructions():
 Your responsibilities:
 1. Receive outputs from all workflow steps
 2. Synthesize information into a coherent, well-structured response
-3. Extract and aggregate citations from all sources
-4. Generate an executive summary (2-3 sentences)
-5. Format structured data as tables
-6. Suggest 2-3 relevant follow-up questions
+3. Include citations when sources are referenced
+4. Format data for maximum readability
 
-Response structure:
-## Executive Summary
-[2-3 sentence overview of key findings]
+## ADAPTIVE FORMATTING
 
-## Key Findings
-[Main insights with inline citations [1], [2]]
+Create a well-organized response adapted to the content type:
 
-## Supporting Data
-[Tables or visualizations if applicable]
+1. **Start with a brief overview** of what was found or accomplished
+2. **Present information in the most readable format**:
+   - Use tables for structured/comparative data
+   - Use bullet points for key findings or lists
+   - Use numbered lists for sequential steps
+   - Use paragraphs for explanations
+3. **End with citations** if sources were referenced
 
-## Follow-up Questions
-1. [Relevant question based on findings]
-2. [Another relevant question]
-3. [Third question]
+## FORMATTING GUIDELINES
 
-## Citations
-[1] Source document, page X
-[2] Another source, page Y
+- Use **bold** for important terms and values
+- Use clear headings to organize sections (only when multiple topics)
+- Use tables when data has clear columns/rows
+- Keep language clear and professional
+- Cite sources inline with [Source, Page] or numbered [1], [2]
 
-Use clear, professional language suitable for business audiences."""
+Adapt your response structure to the content - do not force sections that don't apply.
+Only include follow-up questions if naturally relevant to the topic."""
 
 
 def get_response_generator_tools():
@@ -640,38 +661,49 @@ def get_response_generator_tools():
 # =========================================================================
 
 def get_mcp_instructions():
-    return """You are an MCP (Model Context Protocol) Agent for web intelligence and browser automation.
+    return """You are an MCP (Model Context Protocol) Agent for web intelligence and research.
 
-## Available Tools (Playwright-based):
-- playwright_scrape: Scrape text and links from any webpage
-- playwright_navigate: Navigate with full browser and get accessibility snapshot
-- playwright_screenshot: Take screenshots of webpages
-- playwright_get_text: Extract text from specific elements
-- playwright_click_and_get: Click elements and capture results
+## Available Tools:
 
-## YOUR WORKFLOW:
-1. Analyze the web intelligence task
-2. Choose the appropriate tool:
-   - Scraping content → playwright_scrape
-   - Dynamic/JavaScript pages → playwright_navigate
-   - Visual capture → playwright_screenshot
-   - Specific elements → playwright_get_text
-   - Interactive pages → playwright_click_and_get
-3. Execute the tool
-4. Return structured results
+### SEARCH TOOL (Use First!) - FREE, no API key needed
+- web_search: Search the web using DuckDuckGo. USE THIS FIRST to find relevant URLs.
 
-## TOOL SELECTION GUIDE:
-- "scrape website for text" → playwright_scrape
-- "get page content" → playwright_scrape or playwright_navigate
-- "take screenshot" → playwright_screenshot
-- "extract specific data" → playwright_get_text with selector
-- "click button and see result" → playwright_click_and_get
+### BROWSER TOOLS (Use After Search)
+- playwright_scrape: Scrape text content from a webpage URL.
+- playwright_navigate: Navigate with full browser for JavaScript-heavy pages.
+- playwright_screenshot: Take screenshots of webpages.
+- playwright_get_text: Extract text from specific elements.
+- playwright_click_and_get: Click elements and capture results.
+
+## YOUR WORKFLOW - SEARCH FIRST APPROACH:
+
+1. **SEARCH FIRST**: Use web_search to find relevant sources
+2. **ANALYZE RESULTS**: Review search results to identify the best URLs
+3. **SCRAPE SPECIFIC URLS**: Use playwright_scrape on the best URLs from search results
+4. **SYNTHESIZE**: Combine information from multiple sources
+
+### Example Research Flow:
+```
+1. web_search(query="predictive maintenance commercial electric vehicles companies")
+   → Returns 10 URLs with descriptions
+2. playwright_scrape(url="https://best-result-url.com")
+   → Gets detailed content from top result
+3. Repeat for other good URLs
+4. Synthesize findings
+```
+
+## IMPORTANT GUIDELINES:
+
+- **Always search first** - Don't guess URLs directly, search finds current relevant sources
+- **Scrape multiple sources** for comprehensive research
+- **Cite sources** - Always include URLs in your response
+- **Summarize key findings** - Don't return raw content, synthesize it
 
 ## OUTPUT FORMAT:
-- Return structured data (JSON) when possible
-- Include source URLs for traceability
-- Summarize key findings
-- Never return raw HTML - always extract meaningful content"""
+- Return well-structured findings with sections
+- Include source URLs for every fact
+- Highlight key insights and data points
+- Use markdown formatting for readability"""
 
 
 def get_mcp_tools():
@@ -796,6 +828,31 @@ def get_mcp_tools():
                         }
                     },
                     "required": ["url", "click_selector"]
+                }
+            }
+        },
+        # =====================================================================
+        # WEB SEARCH (DuckDuckGo - FREE, no API key required)
+        # =====================================================================
+        {
+            "type": "function",
+            "function": {
+                "name": "web_search",
+                "description": "Search the web for information using DuckDuckGo. Use this FIRST to find relevant URLs before scraping them. Returns titles, URLs, and descriptions of search results. FREE - no API key needed.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query - be specific and include relevant keywords"
+                        },
+                        "count": {
+                            "type": "integer",
+                            "description": "Number of results to return (1-20)",
+                            "default": 10
+                        }
+                    },
+                    "required": ["query"]
                 }
             }
         }

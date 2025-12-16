@@ -407,9 +407,14 @@ async def index_document_content(
                     logging.warning(f"Document Intelligence failed: {doc_result.get('error')}, using fallback")
                     raise Exception("Fallback to basic extraction")
                     
+            except ImportError as ie:
+                logging.error(f"Document Intelligence import failed - package not installed: {ie}")
+                use_doc_intel = False
             except Exception as e:
-                logging.info(f"Document Intelligence fallback: {e}")
+                logging.warning(f"Document Intelligence fallback due to error: {type(e).__name__}: {e}")
                 use_doc_intel = False  # Fall through to basic extraction
+        
+        logging.info(f"Extraction status: use_doc_intel={use_doc_intel}, pages_count={len(pages) if 'pages' in locals() else 0}")
         
         if not use_doc_intel:
             # Basic text extraction
@@ -422,7 +427,16 @@ async def index_document_content(
                 return {"success": False, "error": f"Unsupported file type: {file_type}"}
         
         if not pages:
-            return {"success": False, "error": "No text content extracted from file"}
+            # Include more detail about which extraction method was tried
+            extraction_method = "Document Intelligence" if use_doc_intel else "pypdf basic extraction"
+            doc_intel_error = doc_result.get('error', 'unknown') if doc_result else 'not attempted'
+            return {
+                "success": False, 
+                "error": f"No text content extracted from file. Method: {extraction_method}. "
+                         f"Doc Intelligence: {doc_intel_error}. "
+                         f"This usually means the PDF is a scanned image without OCR text layer, "
+                         f"or Document Intelligence failed to process it."
+            }
         
         # 2. Chunk all pages - support both semantic and character-based chunking
         chunking_strategy = os.environ.get("CHUNKING_STRATEGY", "character").lower()  # Default: character (faster)

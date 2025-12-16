@@ -80,8 +80,9 @@ async def extract_with_document_intelligence(
     
     try:
         from azure.ai.documentintelligence import DocumentIntelligenceClient
-        from azure.ai.documentintelligence.models import AnalyzeDocumentRequest, DocumentAnalysisFeature
+        from azure.ai.documentintelligence.models import DocumentAnalysisFeature
         from azure.core.credentials import AzureKeyCredential
+        import io
         
         client = DocumentIntelligenceClient(
             endpoint=endpoint,
@@ -100,10 +101,11 @@ async def extract_with_document_intelligence(
             return {"success": False, "error": f"Unsupported format: {file_type}"}
         
         # Analyze document with prebuilt-layout model
-        # This extracts text, tables, key-value pairs, and more
+        # Pass bytes as IO stream via analyze_request parameter
+        logging.info(f"Calling Document Intelligence with content_type={content_type}, size={len(content)} bytes")
         poller = client.begin_analyze_document(
             model_id="prebuilt-layout",
-            analyze_request=AnalyzeDocumentRequest(bytes_source=content),
+            analyze_request=io.BytesIO(content),  # Pass as IO[bytes] stream
             content_type=content_type,
             features=[DocumentAnalysisFeature.KEY_VALUE_PAIRS]  # Enable KV extraction
         )

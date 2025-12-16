@@ -70,14 +70,42 @@ async def execute_tool(tool_name: str, args: dict) -> dict:
             return {"success": False, "error": str(e)}
 
 
-async def run_agent_with_client(client: AgentsClient, agent_id: str, prompt: str) -> dict:
+async def run_agent_with_client(
+    client: AgentsClient, 
+    agent_id: str, 
+    prompt: str,
+    vector_store_id: str = None,
+    file_ids: list = None
+) -> dict:
     """
     Run an agent directly using AgentsClient.
     Returns the agent's response.
+    
+    Args:
+        client: AgentsClient instance
+        agent_id: The agent to invoke
+        prompt: User message/prompt
+        vector_store_id: Optional workflow-specific vector store for RAG
+        file_ids: Optional file IDs for code interpreter
     """
     try:
-        # Create thread and message
-        thread = await client.threads.create()
+        # Build tool_resources for thread (workflow-specific document isolation)
+        thread_kwargs = {}
+        tool_resources = {}
+        
+        if vector_store_id:
+            tool_resources["file_search"] = {"vector_store_ids": [vector_store_id]}
+            logger.info(f"Attaching vector store to thread: {vector_store_id}")
+        
+        if file_ids:
+            tool_resources["code_interpreter"] = {"file_ids": file_ids}
+            logger.info(f"Attaching {len(file_ids)} files for code interpreter")
+        
+        if tool_resources:
+            thread_kwargs["tool_resources"] = tool_resources
+        
+        # Create thread with resources
+        thread = await client.threads.create(**thread_kwargs)
         await client.messages.create(
             thread_id=thread.id,
             role="user",
@@ -232,6 +260,16 @@ async def main_async(req: func.HttpRequest) -> func.HttpResponse:
             # Build agent prompt from context and step
             user_request = context.get("user_request", "")
             previous_outputs = context.get("previous_outputs", {})
+            workflow_id = context.get("workflow_id", "")
+            indexed_files = context.get("indexed_files", [])
+            data_ready_message = context.get("data_ready_message", "")
+            
+            # Build indexed files summary
+            files_summary = ""
+            if indexed_files:
+                file_names = [f.get("name", "unknown") for f in indexed_files]
+                total_chunks = sum(f.get("chunks", 0) for f in indexed_files)
+                files_summary = f"Indexed files: {file_names}. Total chunks: {total_chunks}"
             
             agent_prompt = f"""Execute this step:
 
@@ -240,6 +278,12 @@ async def main_async(req: func.HttpRequest) -> func.HttpResponse:
 
 ## User Request
 {user_request}
+
+## Workflow Context
+workflow_id: {workflow_id}
+{f'Data Status: {data_ready_message}' if data_ready_message else 'No documents indexed for this workflow.'}
+{files_summary}
+IMPORTANT: When calling consult_rag or any RAG search tool, you MUST pass workflow_id="{workflow_id}" to filter documents to this workflow only.
 
 ## Previous Step Outputs
 {json.dumps(previous_outputs, indent=2) if previous_outputs else "None"}
@@ -258,8 +302,21 @@ Process this step and return a well-formatted result."""
             credential = DefaultAzureCredential()
             client = AgentsClient(endpoint=endpoint, credential=credential)
             
+            # Extract workflow-specific resources from context for document isolation
+            vector_store_id = context.get("azure_vector_store_id")
+            file_ids = context.get("azure_file_ids", [])
+            
+            if vector_store_id:
+                logger.info(f"Using workflow vector store: {vector_store_id}")
+            
             try:
-                agent_result = await run_agent_with_client(client, agent_id, agent_prompt)
+                agent_result = await run_agent_with_client(
+                    client, 
+                    agent_id, 
+                    agent_prompt,
+                    vector_store_id=vector_store_id,
+                    file_ids=file_ids
+                )
                 
                 if agent_result.get("success"):
                     result["success"] = True
